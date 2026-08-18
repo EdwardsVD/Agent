@@ -1,4 +1,4 @@
-# Agent CLI — coding agent 1 file Python (thinking + AI search)
+# Agent CLI — coding agent 1 file Python (thinking + AI search + superpowers)
 
 Coding agent CLI minimalis, **semua fitur dalam satu file `main.py`**.
 Agent bisa **berpikir (thinking) yang ditampilkan jelas** — bisa dibuka/ditutup —
@@ -7,6 +7,20 @@ dan **mencari di web sendiri** (DuckDuckGo / SearXNG) dengan alur:
 ```
 🧠 Thinking → 🔎 Search → 🧠 Thinking lagi → ✅ Hasil
 ```
+
+## Yang baru di v2.1.0 🚀
+
+- **Intro animasi ala hacker**: hujan angka ijo random full screen (matrix),
+  logo **AGENT** besar, terus **loading 1-100%** — semua di terminal. Skip
+  dengan `python3 main.py --no-anim`, replay kapan aja dengan `/intro`.
+- **Agent makin superpower** (ala opencode / Claude Code): `list_files`,
+  `grep_files`, `read_file` (per baris), `bash` dengan timeout sampai 600 detik
+  buat build & test kode, plus riset web (`web_search` + `web_fetch`) supaya
+  jawaban lengkap, akurat, dan ada sumbernya.
+- **Download hasil kerja**: kalau agent bikin file, di akhir muncul
+  **"💾 Click here to download: /download -f <file>"** — file otomatis di-zip ke
+  folder `downloads/` (atau `/download` buat zip semua file hasil kerja).
+- Bash langsung dari prompt: awali dengan `!`, contoh `!ls -la`.
 
 Contoh tampilan pas agent lagi ngerjain tugas:
 
@@ -26,11 +40,25 @@ Contoh tampilan pas agent lagi ngerjain tugas:
 ──────────────────────────────────────────────────────
  DONE ────────────────────────────────────────────────
   Jawaban lengkap + sumber [1](url), [2](url)
+💾 Click here to download: /download -f hasil.txt
 ```
 
 ## Instalasi & menjalankan
 
 ```bash
+git clone https://github.com/EdwardsVD/Agent.git
+cd Agent
+pip install -r requirements.txt
+python3 main.py
+```
+
+> ⚠️ Clone di folder mana aja, **tapi jangan di dalam folder Agent yang sudah
+> ada** (nanti jadinya `Agent/Agent/...` dan `main.py` gak ketemu).
+
+**Di Termux (Android):**
+
+```bash
+pkg install python git -y
 git clone https://github.com/EdwardsVD/Agent.git
 cd Agent
 pip install -r requirements.txt
@@ -50,6 +78,8 @@ key buat banyak model: Claude, GPT, Qwen, Kimi).
 
 ## Fitur utama
 
+- **Intro animasi** — matrix hijau full screen + logo AGENT + loading 1-100%
+  (`/intro` buat replay, `--no-anim` buat skip)
 - **Thinking diperlihatkan** — reasoning model ditampilkan sebagai blok 🧠 yang
   jelas. Bisa dibuka/tutup kapan aja:
   - `/think on|off` — aktifkan/matikan reasoning model
@@ -61,19 +91,23 @@ key buat banyak model: Claude, GPT, Qwen, Kimi).
   - `web_fetch` buat baca isi halaman hasil pencarian
   - Hasil search masuk ke konteks → model mikir lagi → jawaban lebih akurat
     dengan **sumber [1](url)** di jawaban final
-- **Tool sandbox** — `read_file`, `write_file`, `edit_file` (pencocokan fuzzy,
-  toleran whitespace/indentasi), `bash` — semua dibatasi di folder `workspace/`
+- **Superpower tools** — `list_files`, `grep_files`, `read_file` (offset/limit),
+  `write_file`, `edit_file` (pencocokan fuzzy, toleran whitespace), `bash`
+  (timeout sampai 600 dtk, ada exit code) — file dibatasi di folder `workspace/`
+- **Download hasil kerja** — `/download -f <file>` (zip otomatis),
+  `/download` (zip semua file tugas terakhir), `/download list`
 - **Streaming respons** + fallback otomatis ke non-stream kalau provider nolak
 - **Toolbar status** — model aktif, level upaya, status thinking, engine search,
   jumlah langkah, status koneksi
 - **10 model** via Xkiro.com + kontrol effort: `none, low, medium, high, xhigh, max`
-- Slash-command lengkap, riwayat percakapan multi-turn, konfigurasi persist di
-  `~/.opencode_clone/connect.json`
+- Slash-command lengkap, riwayat percakapan multi-turn, bash cepat dengan `!`,
+  konfigurasi persist di `~/.opencode_clone/connect.json`
 
 ## Slash-command
 
 | Perintah | Fungsi |
 |---|---|
+| `/intro` | Putar ulang animasi pembuka (matrix + loading) |
 | `/connect` | Wizard setup base URL + API key (default Xkiro.com) |
 | `/connect show` / `/connect test` | Lihat / tes koneksi |
 | `/models` | Daftar semua model + level upaya yang didukung |
@@ -87,11 +121,15 @@ key buat banyak model: Claude, GPT, Qwen, Kimi).
 | `/search searxng off` | Matikan SearXNG, balik ke DDG |
 | `/search test <query>` | Coba cari langsung (5 hasil) tanpa manggil model |
 | `/fetch <url>` | Coba ambil isi halaman web langsung |
-| `/limit <n>` | Maks. langkah agent per tugas (default 30) |
+| `/download -f <file>` | **ZIP file hasil kerja agent** (ke folder `downloads/`) |
+| `/download` | ZIP semua file yang dibuat di tugas terakhir |
+| `/download list` | Lihat daftar file yang bisa di-download |
+| `/limit <n>` | Maks. langkah agent per tugas (default 40) |
 | `/status` | Status lengkap (model, thinking, search, endpoint, key) |
 | `/clear` | Kosongkan riwayat percakapan |
 | `/help` | Bantuan |
 | `/exit` / `/quit` | Keluar |
+| `!<command>` | Jalankan bash langsung, contoh `!ls -la` |
 
 ## Setup SearXNG
 
@@ -139,11 +177,13 @@ dengan parameter `reasoning` buat kontrol thinking:
 }
 ```
 
-Alur per tugas: model berpikir (blok 🧠 ditampilkan), kalau butuh info dia
-panggil `web_search` → hasil masuk sebagai OBSERVATION → model berpikir lagi
-(bisa `web_fetch` halaman relevan) → jawab `DONE` lengkap dengan sumber.
-Reasoning model dibaca dari field `reasoning_content` / `reasoning` / `thinking`
-(pakai streaming SSE, fallback non-stream otomatis).
+Alur per tugas: model berpikir (blok 🧠 ditampilkan), eksplorasi workspace
+(`list_files` / `grep_files` / `read_file`), kalau butuh info dia panggil
+`web_search` → hasil masuk sebagai OBSERVATION → model berpikir lagi (bisa
+`web_fetch` halaman relevan) → bangun file (`write_file` / `edit_file`) →
+verifikasi pakai `bash` → jawab `DONE` lengkap dengan sumber + tawaran download
+zip. Reasoning model dibaca dari field `reasoning_content` / `reasoning` /
+`thinking` (pakai streaming SSE, fallback non-stream otomatis).
 
 ## Struktur file
 
@@ -152,5 +192,6 @@ Agent/
 ├── main.py            # SEMUA kode agent (1 file)
 ├── requirements.txt   # cuma requests
 ├── README.md
-└── workspace/         # folder kerja agent (dibuat otomatis, di-gitignore)
+├── workspace/         # folder kerja agent (dibuat otomatis, di-gitignore)
+└── downloads/         # hasil /download -f (zip, dibuat otomatis, di-gitignore)
 ```

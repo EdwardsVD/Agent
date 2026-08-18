@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Agent CLI — coding agent 1 file Python (thinking + AI search)
-==============================================================
-Update dari opencode-clone. Semua fitur digabung jadi SATU file biar gampang:
+Agent CLI — coding agent 1 file Python (thinking + AI search + superpowers)
+===========================================================================
+Semua fitur dalam SATU file biar gampang:
 
     git clone https://github.com/EdwardsVD/Agent.git
     cd Agent
     pip install -r requirements.txt
     python3 main.py
 
-Fitur baru:
-    - Thinking model DIPERLIHATKAN jelas, bisa dibuka/tutup: /think show|hide
-      (alur: THINK -> cari di web -> THINK lagi -> hasil akhir)
-    - AI search built-in lewat DuckDuckGo (tanpa API key) DAN SearXNG
-      (instance sendiri, bisa di-set lewat /search searxng <url> atau env SEARXNG_URL)
-    - Tool baru untuk model: web_search + web_fetch, plus read/write/edit/bash
-    - Streaming respons (fallback otomatis ke non-stream kalau provider nolak)
-    - Edit file pake pencocokan fuzzy (gak strict soal spasi/indentasi)
-    - Jawaban lebih akurat: model diminta cari sumber & cantumkan [1](url) di jawaban
+v2.1.0 — yang baru:
+    - Intro animasi ala hacker (matrix angka hijau full screen) + logo AGENT
+      + loading 1-100%. Lewati dengan: python3 main.py --no-anim
+    - Agent makin "superpower" ala opencode/Claude Code: list_files, grep_files,
+      read_file (offset/limit), bash dengan timeout panjang buat build & test,
+      plus riset web (web_search + web_fetch) biar jawaban lengkap & akurat.
+    - Download hasil kerja: kalau agent bikin file, di akhir ada
+      "Click here to download" -> /download -f <file> (di-zip otomatis).
+    - /intro buat muter ulang animasi, '!'<cmd> buat bash langsung.
 
 Koneksi API: template Xkiro.com (OpenAI-compatible). API key lewat /connect
 atau env XKIRO_API_KEY. Konfigurasi tersimpan di ~/.opencode_clone/connect.json
@@ -29,6 +29,8 @@ import re
 import sys
 import json
 import time
+import random
+import zipfile
 import getpass
 import shutil
 import textwrap
@@ -43,7 +45,7 @@ import requests
 # KONSTANTA & KONFIGURASI
 # ============================================================================
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 CONFIG_DIR = os.path.expanduser("~/.opencode_clone")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "connect.json")
@@ -68,7 +70,7 @@ DEFAULT_CONFIG = {
     "show_thinking": True,                # blok thinking ditampilkan?
     "search_engine": "auto",              # auto | ddg | searxng
     "searxng_url": "",                    # instance SearXNG sendiri (opsional)
-    "max_steps": 30,                      # maks. langkah agent per tugas
+    "max_steps": 40,                      # maks. langkah agent per tugas
     "stream": True,                       # streaming (fallback otomatis)
 }
 
@@ -125,6 +127,7 @@ DIM = "\033[2m"
 FG_WHITE = "\033[97m"
 FG_BLACK = "\033[30m"
 FG_GREEN = "\033[92m"
+FG_DARKGREEN = "\033[32m"
 FG_YELLOW = "\033[93m"
 FG_CYAN = "\033[96m"
 FG_RED = "\033[91m"
@@ -168,6 +171,129 @@ def _wrap_lines(text, width):
     return lines
 
 
+# ---------------------------------------------------------------------------
+# INTRO ANIMASI: matrix hijau full screen + logo AGENT + loading 1-100
+# ---------------------------------------------------------------------------
+
+MATRIX_CHARS = "0123456789ABCDEF#$%&@*+=/\\<>|"
+
+LOGO = [
+    " █████╗  ██████╗ ███████╗███╗   ██╗████████╗",
+    "██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝",
+    "███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║",
+    "██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║",
+    "██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║",
+    "╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝",
+]
+
+
+def _is_tty():
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except Exception:
+        return False
+
+
+def _anim_enabled():
+    if not _is_tty():
+        return False
+    if "--no-anim" in sys.argv:
+        return False
+    if os.environ.get("AGENT_INTRO", "").lower() in ("0", "off", "no", "false"):
+        return False
+    return True
+
+
+def _matrix_rain(duration=1.8):
+    """Hujan angka ijo random full screen (efek hacker/matrix)."""
+    try:
+        size = shutil.get_terminal_size()
+        h, w = size.lines, size.columns
+    except Exception:
+        return
+    if h < 6 or w < 12:
+        return
+    frames = max(1, int(duration * 18))
+    interval = duration / frames
+    try:
+        for _ in range(frames):
+            lines = []
+            for _ in range(max(1, h - 1)):
+                row = []
+                for _ in range(w):
+                    if random.random() < 0.34:
+                        ch = random.choice(MATRIX_CHARS)
+                        if random.random() < 0.25:
+                            row.append(FG_GREEN + ch)
+                        else:
+                            row.append(FG_DARKGREEN + ch)
+                    else:
+                        row.append(" ")
+                lines.append("".join(row))
+            sys.stdout.write("\033[H" + "\n".join(lines) + RESET)
+            sys.stdout.flush()
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+
+
+def _show_logo_and_loading(load_duration=1.8):
+    """Logo AGENT + loading 1-100% di tengah layar."""
+    try:
+        size = shutil.get_terminal_size()
+        h, w = size.lines, size.columns
+    except Exception:
+        h, w = 24, 80
+
+    logo = LOGO if w >= 62 else []
+    pad_top = max(0, (h - len(logo) - 7) // 2)
+    sys.stdout.write("\n" * pad_top)
+    for line in logo:
+        sys.stdout.write(f"{FG_GREEN}{BOLD}{line.center(w)}{RESET}\n")
+    tag = f"AGENT v{VERSION} · superpower edition · thinking + AI search"
+    sys.stdout.write(f"{FG_CYAN}{tag.center(w)}{RESET}\n\n")
+
+    bar_w = max(12, min(48, w - 14))
+    steps = 100
+    step_delay = load_duration / steps
+    try:
+        for pct in range(1, steps + 1):
+            filled = int(bar_w * pct / steps)
+            bar = "█" * filled + "░" * (bar_w - filled)
+            sys.stdout.write(
+                f"\r{(' ' * max(0, (w - bar_w - 12) // 2))}"
+                f"{FG_GREEN}[{bar}]{RESET} {FG_GREEN}{BOLD}{pct:3d}%{RESET}"
+            )
+            sys.stdout.flush()
+            time.sleep(step_delay)
+    except KeyboardInterrupt:
+        sys.stdout.write(f"\r{FG_GREEN}{'OK — lanjut'.center(w)}{RESET}")
+        sys.stdout.flush()
+        time.sleep(0.3)
+    sys.stdout.write("\n")
+
+
+def intro_animation(duration=1.8, load_duration=1.8):
+    """Animasi pembuka: matrix -> logo -> loading 1-100 -> clear screen.
+    Di-skip otomatis kalau bukan terminal interaktif (mis. piped stdin)."""
+    if not _anim_enabled():
+        return
+    hide = "\033[?25l"
+    show = "\033[?25h"
+    try:
+        sys.stdout.write("\033[2J\033[H" + hide)
+        sys.stdout.flush()
+        _matrix_rain(duration)
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+        _show_logo_and_loading(load_duration)
+        sys.stdout.write("\033[2J\033[H" + show)
+        sys.stdout.flush()
+    finally:
+        sys.stdout.write(show)
+        sys.stdout.flush()
+
+
 def banner():
     w = term_width()
     title = f"Agent CLI v{VERSION}  ·  thinking + AI search (DDG / SearXNG)"
@@ -176,8 +302,8 @@ def banner():
     print(f"{FG_CYAN}{BOLD}{title.center(w)}{RESET}")
     print(f"{FG_CYAN}{BOLD}{line}{RESET}")
     print(
-        f"{DIM}Ketik tugas biasa buat agent (agent bisa web_search/web_fetch kalau butuh), "
-        f"atau '/help' buat daftar perintah.{RESET}\n"
+        f"{DIM}Ketik tugas biasa buat agent (superpowers: bash, file, web_search, web_fetch), "
+        f"'/intro' buat animasi lagi, '/help' buat daftar perintah.{RESET}\n"
     )
 
 
@@ -266,6 +392,8 @@ def thinking_block(text, label="🧠 Thinking"):
 def _action_label(tool_name, args):
     a = args or {}
     styles = {
+        "list_files": ("📂 List", str(a.get("path", "."))),
+        "grep_files": ("🔍 Grep", '"{}" di {}'.format(a.get("pattern", "?"), a.get("path", "."))),
         "read_file": ("📖 Baca", str(a.get("path", "?"))),
         "write_file": ("📝 Tulis", str(a.get("path", "?"))),
         "edit_file": ("✏️ Edit", str(a.get("path", "?"))),
@@ -812,7 +940,7 @@ def _html_to_text(html_text):
     return parser.title.strip(), body
 
 
-def web_fetch(cfg, url, max_chars=3500):
+def web_fetch(cfg, url, max_chars=6000):
     """Ambil & ekstrak teks sebuah halaman web. Return (judul, teks)."""
     if not re.match(r"^https?://", url or ""):
         raise RuntimeError("URL harus diawali http:// atau https://")
@@ -861,6 +989,9 @@ def web_fetch(cfg, url, max_chars=3500):
 
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 
+# file yang dibuat/diubah agent selama TUGAS TERAKHIR (buat fitur /download)
+LAST_TASK_FILES = []
+
 
 def _safe_path(path):
     full = os.path.abspath(os.path.join(WORKSPACE_DIR, path))
@@ -869,10 +1000,106 @@ def _safe_path(path):
     return full
 
 
+def _record_file(path):
+    rel = os.path.relpath(os.path.abspath(path), WORKSPACE_DIR)
+    rel = rel.replace(os.sep, "/")
+    if rel not in LAST_TASK_FILES:
+        LAST_TASK_FILES.append(rel)
+
+
+def tool_list_files(args, cfg):
+    try:
+        base = _safe_path(args.get("path", "."))
+        max_depth = max(1, min(6, int(args.get("depth", 3))))
+        if os.path.isfile(base):
+            return f"[OK] {os.path.relpath(base, WORKSPACE_DIR)} (file)"
+        lines = []
+        count = 0
+        for root, dirs, files in os.walk(base):
+            dirs[:] = [d for d in sorted(dirs) if d not in ("__pycache__", ".git", "node_modules", ".venv")]
+            rel_root = os.path.relpath(root, base)
+            depth = 0 if rel_root == "." else rel_root.count(os.sep) + 1
+            if depth > max_depth:
+                dirs[:] = []
+                continue
+            prefix = "  " * depth
+            dir_name = os.path.basename(root) if depth else os.path.basename(base) or "workspace"
+            lines.append(f"{prefix}{dir_name}/")
+            for f in sorted(files)[:200]:
+                try:
+                    size = os.path.getsize(os.path.join(root, f))
+                except OSError:
+                    size = 0
+                lines.append(f"{prefix}  {f}  ({size} B)")
+                count += 1
+            if len(lines) > 400:
+                lines.append("… [terpotong, banyak file]")
+                break
+        return "[OK] Isi folder:\n" + "\n".join(lines) or "[OK] Folder kosong"
+    except Exception as e:
+        return f"[Error list_files: {e}]"
+
+
+def tool_grep_files(args, cfg):
+    try:
+        base = _safe_path(args.get("path", "."))
+        pattern = str(args.get("pattern", ""))
+        if not pattern:
+            return "[Error grep_files: 'pattern' wajib diisi]"
+        use_regex = bool(args.get("regex", False))
+        limit = max(1, min(100, int(args.get("limit", 50))))
+        try:
+            needle = re.compile(pattern) if use_regex else None
+        except re.error as e:
+            return f"[Error grep_files: regex tidak valid ({e})]"
+        matches = []
+        walked = 0
+        targets = [base]
+        if os.path.isfile(base):
+            targets = [base]
+        else:
+            for root, dirs, files in os.walk(base):
+                dirs[:] = [d for d in dirs if d not in ("__pycache__", ".git", "node_modules", ".venv")]
+                targets.extend(os.path.join(root, f) for f in files)
+                walked += len(files)
+                if walked > 2000:
+                    break
+        for path in targets:
+            rel = os.path.relpath(path, WORKSPACE_DIR).replace(os.sep, "/")
+            try:
+                if os.path.getsize(path) > 500_000:
+                    continue
+                with open(path, "r", errors="replace") as f:
+                    for lineno, line in enumerate(f, 1):
+                        hit = (needle.search(line) if needle else (pattern in line))
+                        if hit:
+                            matches.append(f"{rel}:{lineno}: {line.rstrip()[:160]}")
+                            if len(matches) >= limit:
+                                break
+            except (OSError, UnicodeDecodeError):
+                continue
+            if len(matches) >= limit:
+                break
+        if not matches:
+            return f"[OK] '{pattern}' tidak ditemukan di {os.path.relpath(base, WORKSPACE_DIR)}"
+        return f"[OK] {len(matches)} cocok untuk '{pattern}':\n" + "\n".join(matches)
+    except Exception as e:
+        return f"[Error grep_files: {e}]"
+
+
 def tool_read_file(args, cfg):
     try:
-        with open(_safe_path(args["path"]), "r") as f:
+        path = _safe_path(args["path"])
+        with open(path, "r") as f:
             content = f.read()
+        offset = max(0, int(args.get("offset", 0)))
+        limit = int(args.get("limit", 0)) or None
+        lines = content.splitlines()
+        if offset or limit:
+            end = offset + limit if limit else None
+            sliced = lines[offset:end]
+            head = f"[OK] {args['path']} (baris {offset + 1}-{offset + len(sliced)} dari {len(lines)})\n"
+            return head + "\n".join(sliced)
         if len(content) > 60000:
             content = content[:60000] + f"\n… [terpotong — total {len(content)} karakter]"
         return content
@@ -886,6 +1113,7 @@ def tool_write_file(args, cfg):
         os.makedirs(os.path.dirname(path) or WORKSPACE_DIR, exist_ok=True)
         with open(path, "w") as f:
             f.write(args["content"])
+        _record_file(path)
         return f"[OK] File ditulis: {args['path']}"
     except Exception as e:
         return f"[Error write_file: {e}]"
@@ -929,6 +1157,7 @@ def tool_edit_file(args, cfg):
         content = _fuzzy_replace(content, args["old"], args["new"])
         with open(path, "w") as f:
             f.write(content)
+        _record_file(path)
         return f"[OK] File diedit: {args['path']}"
     except Exception as e:
         return f"[Error edit_file: {e}]"
@@ -936,16 +1165,19 @@ def tool_edit_file(args, cfg):
 
 def tool_bash(args, cfg):
     try:
+        timeout = max(1, min(600, int(args.get("timeout", 120))))
         result = subprocess.run(
             args["command"],
             shell=True,
             cwd=WORKSPACE_DIR,
             capture_output=True,
             text=True,
-            timeout=int(args.get("timeout", 30)),
+            timeout=timeout,
         )
         out = (result.stdout + result.stderr).strip()
-        return out or "[Tidak ada output]"
+        if result.returncode != 0:
+            out = (out or "[Tidak ada output]") + f"\n[exit code: {result.returncode}]"
+        return out or "[OK] exit code: 0 (tanpa output)"
     except subprocess.TimeoutExpired:
         return "[Error bash: command timeout]"
     except Exception as e:
@@ -989,6 +1221,8 @@ def tool_web_fetch(args, cfg):
 
 
 TOOLS = {
+    "list_files": tool_list_files,
+    "grep_files": tool_grep_files,
     "read_file": tool_read_file,
     "write_file": tool_write_file,
     "edit_file": tool_edit_file,
@@ -1002,11 +1236,11 @@ TOOLS = {
 # AGENT: prompt sistem, parser respons, loop THINK -> ACTION -> OBSERVATION
 # ============================================================================
 
-SYSTEM_PROMPT = """Kamu adalah coding agent CLI yang bekerja di sebuah workspace lokal. Kamu punya tool buat baca/tulis file, jalankan bash, DAN cari info di web (DuckDuckGo / SearXNG) supaya jawabanmu selalu akurat & terkini.
+SYSTEM_PROMPT = """Kamu adalah coding agent SUPER POWER ala opencode / Claude Code yang jalan di terminal. Kamu punya akses penuh ke bash, file system workspace, DAN web (DuckDuckGo / SearXNG) buat ngerjain tugas apa pun dengan akurat & lengkap.
 
 ATURAN RESPONS — balas HANYA dengan pola berikut, tanpa teks lain di luar pola:
 
-THINK: <ringkasan singkat rencanamu, 1-3 kalimat>     (opsional)
+THINK: <rencana singkat 1-3 kalimat>          (opsional tapi dianjurkan)
 
 ACTION: <nama_tool>
 INPUT: <json satu baris>
@@ -1015,22 +1249,28 @@ atau kalau tugas sudah selesai:
 
 DONE: <jawaban / ringkasan final>
 
-TOOL YANG TERSEDIA:
-- read_file  {"path": "..."}
+TOOLS (superpowers):
+- list_files {"path": ".", "depth": 3}        jelajah isi folder (+ ukuran file)
+- grep_files {"pattern": "...", "path": ".", "regex": false, "limit": 50}  cari teks di banyak file
+- read_file  {"path": "...", "offset": 0, "limit": 0}   baca file (bisa per-baris)
 - write_file {"path": "...", "content": "..."}
-- edit_file  {"path": "...", "old": "...", "new": "..."}
-- bash       {"command": "..."}
-- web_search {"query": "...", "limit": 5, "engine": "auto|ddg|searxng"}
-- web_fetch  {"url": "https://..."}
+- edit_file  {"path": "...", "old": "...", "new": "..."}   pencocokan fuzzy, toleran whitespace
+- bash       {"command": "...", "timeout": 120}   jalankan perintah apa pun (maks 600 dtk, cwd=workspace)
+- web_search {"query": "...", "limit": 5, "engine": "auto|ddg|searxng"}   cari info terkini
+- web_fetch  {"url": "https://..."}             baca isi halaman web (dokumentasi, wiki, dll)
 
-ALUR KERJA (penting):
-1. THINK dulu: putuskan apakah tugas butuh info dari web (mis. dokumentasi library, versi terbaru, fakta yang bisa berubah, atau hal yang kamu ragu). Kalau iya -> web_search.
-2. Baca hasil pencarian (OBSERVATION), lalu THINK lagi: kalau butuh detail, web_fetch halaman yang paling relevan.
-3. Ulangi sampai yakin, lalu jawab dengan DONE.
-4. Dalam DONE, cantumkan sumber sebagai [1](url), [2](url) kalau kamu pakai info dari web.
-5. JANGAN menebak isi file: selalu read_file dulu sebelum edit_file/write_file.
-6. JSON INPUT boleh multi-baris tapi harus valid JSON (pakai \\n untuk newline di dalam string).
-7. Jawab pakai bahasa yang dipakai user (default Indonesia)."""
+CARA MIKIR (superpower loop):
+1. THINK: pecah tugas jadi langkah kecil, putuskan apa yang perlu dicek / dibuat / dicari.
+2. EKSPLORASI: pahami state workspace dulu — list_files, grep_files, read_file. JANGAN menebak isi file.
+3. RISET: kalau butuh fakta terkini, versi library, API, dokumentasi, atau hal yang kamu ragu -> web_search, lalu web_fetch halaman paling relevan. Baca hasilnya, THINK lagi, kalau masih kurang search/fetch sekali lagi.
+4. BANGUN: write_file / edit_file. Lalu pakai bash buat JALANKAN & TEST kode kamu (python3, node, pip, git, dll). Kalau error, baca pesannya, perbaiki, ulangi sampai bener.
+5. VERIFIKASI: read_file hasil akhir, jalankan syntax check/test sekali lagi, pastikan tidak ada yang kurang.
+6. DONE: ringkasan singkat + daftar file yang dibuat + sumber [1](url), [2](url) kalau pakai info dari web.
+
+ATURAN TAMBAHAN:
+- Jangan menyerah kalau bash error — baca outputnya dan perbaiki.
+- JSON INPUT boleh multi-baris tapi harus valid JSON (pakai \\n untuk newline di dalam string).
+- Jawab pakai bahasa yang dipakai user (default Indonesia)."""
 
 
 def parse_response(text):
@@ -1090,6 +1330,7 @@ def parse_response(text):
 
 HELP_TEXT = """Perintah yang tersedia:
   /help                          Tampilkan bantuan ini
+  /intro                         Putar ulang animasi pembuka (matrix + loading)
   /connect                       Setup / cek koneksi API (template Xkiro.com)
   /connect show|test             Lihat / tes koneksi saat ini
   /models                        Lihat semua model yang tersedia
@@ -1103,13 +1344,17 @@ HELP_TEXT = """Perintah yang tersedia:
   /search searxng off            Matikan SearXNG (balik ke DDG)
   /search test <query>           Coba cari <query> langsung (5 hasil)
   /fetch <url>                   Coba ambil isi halaman web <url>
-  /limit <n>                     Maks. langkah agent per tugas (default 30)
-  /status                        Tampilkan toolbar status
+  /download -f <file>            ZIP file hasil kerja agent (dari tugas terakhir)
+  /download                      ZIP SEMUA file yang dibuat di tugas terakhir
+  /download list                 Lihat daftar file yang bisa di-download
+  /limit <n>                     Maks. langkah agent per tugas (default 40)
+  /status                        Tampilkan status lengkap
   /clear                         Kosongkan riwayat percakapan
   /exit atau /quit               Keluar dari program
 
-Selain itu, ketik pesan biasa untuk kasih tugas ke agent. Agent akan berpikir,
-mencari di web kalau perlu (web_search / web_fetch), berpikir lagi, lalu menjawab."""
+Selain itu, ketik pesan biasa untuk kasih tugas ke agent (superpowers: bash,
+file, web_search, web_fetch — alur: thinking -> search -> thinking -> hasil).
+Awali dengan '!' buat jalankan bash langsung, contoh: !ls -la"""
 
 
 class State:
@@ -1151,6 +1396,90 @@ def _print_search_results(text):
     print()
 
 
+DOWNLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+
+
+def _resolve_ws_file(name):
+    """Cari file di workspace: relatif, atau absolut selama masih di dalam workspace."""
+    cand = os.path.abspath(os.path.join(WORKSPACE_DIR, name))
+    if os.path.isfile(cand):
+        return cand
+    cand = os.path.abspath(name)
+    if cand.startswith(WORKSPACE_DIR) and os.path.isfile(cand):
+        return cand
+    return None
+
+
+def handle_download(rest):
+    """/download [-f <file>] [list]  — zip file hasil kerja agent ke folder downloads/."""
+    arg = rest.strip()
+    if arg == "list":
+        if not LAST_TASK_FILES:
+            system_line("Belum ada file yang dibuat di tugas terakhir.", FG_YELLOW)
+            system_line("Pakai: /download -f <nama file di workspace>")
+            return
+        system_line("📦 File hasil kerja terakhir (workspace/):", FG_CYAN)
+        for i, f in enumerate(LAST_TASK_FILES, 1):
+            full = os.path.join(WORKSPACE_DIR, f)
+            size = os.path.getsize(full) if os.path.isfile(full) else 0
+            print(f"  {BOLD}{i}.{RESET} {f}  {DIM}({size:,} B){RESET}")
+        print()
+        return
+
+    if arg.startswith("-f"):
+        fname = arg[2:].strip().strip('"').strip("'")
+        if not fname:
+            error_line("Pakai: /download -f <nama file>")
+            return
+        files = [fname]
+        single = True
+    elif arg in ("", "all"):
+        if not LAST_TASK_FILES:
+            error_line("Belum ada file yang dibuat di tugas terakhir.")
+            system_line("Pakai: /download -f <nama file>  (lihat /download list buat daftar)")
+            return
+        files = list(LAST_TASK_FILES)
+        single = False
+    else:
+        error_line(f"Argumen '{arg}' tidak dikenal. Pakai: /download -f <file> | /download | /download list")
+        return
+
+    resolved = []
+    for name in files:
+        full = _resolve_ws_file(name)
+        if not full:
+            error_line(f"File '{name}' tidak ditemukan di workspace/.")
+            system_line("Cek dulu: /download list")
+            return
+        resolved.append(full)
+
+    os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+    if single:
+        zip_name = f"{os.path.basename(resolved[0])}.zip"
+        arc = os.path.basename(resolved[0])
+    else:
+        zip_name = f"agent-files-{time.strftime('%Y%m%d-%H%M%S')}.zip"
+        arc = None
+    zip_path = os.path.join(DOWNLOADS_DIR, zip_name)
+    if os.path.exists(zip_path):
+        zip_name = zip_name.replace(".zip", f"-{time.strftime('%H%M%S')}.zip")
+        zip_path = os.path.join(DOWNLOADS_DIR, zip_name)
+
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for full in resolved:
+                zf.write(full, arcname=arc or os.path.relpath(full, WORKSPACE_DIR).replace(os.sep, "/"))
+    except Exception as e:
+        error_line(f"Gagal bikin zip: {e}")
+        return
+
+    size_kb = os.path.getsize(zip_path) / 1024
+    rel = os.path.relpath(zip_path, os.path.dirname(os.path.abspath(__file__)))
+    success_line(f"💾 Download siap: {rel} ({size_kb:.1f} KB)")
+    system_line(f"{DIM}  Isi: {', '.join(os.path.relpath(f, WORKSPACE_DIR) for f in resolved)}{RESET}")
+    print()
+
+
 def handle_slash_command(cmd, state):
     """Return True kalau program harus berhenti."""
     parts = cmd.strip().split(maxsplit=1)
@@ -1160,6 +1489,15 @@ def handle_slash_command(cmd, state):
     if name in ("/exit", "/quit"):
         system_line("Sampai jumpa!", FG_CYAN)
         return True
+
+    if name == "/intro":
+        intro_animation()
+        banner()
+        return False
+
+    if name in ("/download", "/d"):
+        handle_download(rest)
+        return False
 
     if name == "/help":
         system_line(HELP_TEXT)
@@ -1447,7 +1785,26 @@ def connect_wizard(cfg):
 # LOOP UTAMA AGENT: thinking -> (search) -> thinking -> hasil
 # ============================================================================
 
+def _print_download_hint():
+    if not LAST_TASK_FILES:
+        return
+    print(f"{BG_DARKGREY}{FG_GREEN}{BOLD} 📦 File hasil kerja (workspace/):{RESET}")
+    for i, f in enumerate(LAST_TASK_FILES, 1):
+        print(f"   {FG_GREEN}{BOLD}{i}.{RESET} {f}")
+    if len(LAST_TASK_FILES) == 1:
+        cmd = f"/download -f {LAST_TASK_FILES[0]}"
+    else:
+        cmd = "/download"
+    print(
+        f"{FG_GREEN}{BOLD}💾 Click here to download: {cmd}{RESET}  "
+        f"{DIM}(zip otomatis ke folder downloads/){RESET}"
+    )
+    print()
+
+
 def run_task(task, state):
+    global LAST_TASK_FILES
+    LAST_TASK_FILES = []
     state.messages.append({"role": "user", "content": task})
     state.step_count = 0
 
@@ -1511,6 +1868,7 @@ def run_task(task, state):
 
             if parsed["kind"] == "done":
                 done_line(parsed["summary"])
+                _print_download_hint()
                 return
 
             if parsed["kind"] == "error":
@@ -1546,9 +1904,13 @@ def run_task(task, state):
 
 
 def main():
+    if "--version" in sys.argv:
+        print(f"Agent CLI v{VERSION}")
+        return
     if os.name == "nt":
         os.system("")  # aktifkan ANSI di cmd Windows
     state = State()
+    intro_animation()
     banner()
     toolbar(state)
     if not state.config.get("api_key"):
@@ -1576,6 +1938,16 @@ def main():
             toolbar(state)
             if should_exit:
                 break
+            continue
+
+        if text.startswith("!"):
+            cmd = text[1:].strip()
+            if not cmd:
+                continue
+            system_line(f"💻 bash › {cmd}", FG_YELLOW)
+            result = tool_bash({"command": cmd, "timeout": 120}, state.config)
+            observation_line(result)
+            toolbar(state)
             continue
 
         user_bubble(text)
