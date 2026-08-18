@@ -1,27 +1,47 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Agent CLI — coding agent 1 file Python (thinking + AI search + superpowers)
+Agent CLI — coding agent Python dengan SUPERPOWERS
 ===========================================================================
-Semua fitur dalam SATU file biar gampang:
+Bukan cuma tools, tapi DISIPLIN KERJA. Agent dipaksa lewat SOP:
+skill check -> brainstorm + approval -> rencana -> TDD -> verifikasi ->
+self review -> baru boleh bilang DONE.
 
     git clone https://github.com/EdwardsVD/Agent.git
     cd Agent
     pip install -r requirements.txt
     python3 main.py
 
-v2.1.0 — yang baru:
-    - Intro animasi ala hacker (matrix angka hijau full screen) + logo AGENT
-      + loading 1-100%. Lewati dengan: python3 main.py --no-anim
-    - Agent makin "superpower" ala opencode/Claude Code: list_files, grep_files,
-      read_file (offset/limit), bash dengan timeout panjang buat build & test,
-      plus riset web (web_search + web_fetch) biar jawaban lengkap & akurat.
-    - Download hasil kerja: kalau agent bikin file, di akhir ada
-      "Click here to download" -> /download -f <file> (di-zip otomatis).
-    - /intro buat muter ulang animasi, '!'<cmd> buat bash langsung.
+v3.1.0 — fix Termux & anti-akal-akalan:
+    - run.sh: launcher yang selalu cd ke folder Agent yang bener, jadi error
+      "can't open file .../Agent/Agent/main.py" gak mungkin kejadian lagi.
+    - --doctor / /doctor: cek instalasi + kasih tau cara benerin kalau rusak.
+    - Lebar terminal ngikut layar HP (dulu dipaksa min 50 kolom -> jebol).
+    - Gate gak bisa diakalin: `python3 --version` bukan bukti verifikasi, dan
+      file test kosong/stub gak lolos gate TDD (harus ada assertion).
+    - Skill lengkap 42 file + references/agent-cli-tools.md khusus harness ini.
+
+v3.0.0 (SUPERPOWERS):
+    - 14 skill markdown asli dari github.com/obra/superpowers, di-vendor ke
+      folder skills/ (jadi jalan di Termux tanpa internet & tanpa npm).
+      Dibaca on-demand lewat tool `skill` — progressive disclosure, context aman.
+    - 5 WORKFLOW GATE di level kode yang beneran nge-block aksi agent kalau
+      dia nyalip alur: using-superpowers, brainstorming HARD-GATE (approval),
+      test-driven-development (test dulu!), writing-plans, dan
+      verification-before-completion + self review.
+    - Tool baru: skill, list_skills, todo_write, ask_user (agent nanya balik
+      dan NUNGGU jawaban manusia — ini yang bikin approval gate beneran jalan).
+    - Struk kerja tiap DONE: skill dipakai, approval, bukti verifikasi.
+    - Perintah: /skills, /skills <nama>, /superpowers on|off|gates|reload
+    - Test: python3 -m unittest discover -s tests   (89 test)
+
+Warisan v2.1.0: intro animasi matrix + logo AGENT + loading, thinking yang bisa
+dibuka/tutup, AI search DDG/SearXNG, /download zip, '!'<cmd> buat bash langsung.
 
 Koneksi API: template Xkiro.com (OpenAI-compatible). API key lewat /connect
 atau env XKIRO_API_KEY. Konfigurasi tersimpan di ~/.opencode_clone/connect.json
+
+Skill di folder skills/ = MIT (c) 2025 Jesse Vincent — lihat skills/NOTICE.md
 """
 
 import os
@@ -45,7 +65,7 @@ import requests
 # KONSTANTA & KONFIGURASI
 # ============================================================================
 
-VERSION = "2.1.0"
+VERSION = "3.1.0"
 
 CONFIG_DIR = os.path.expanduser("~/.opencode_clone")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "connect.json")
@@ -72,6 +92,8 @@ DEFAULT_CONFIG = {
     "searxng_url": "",                    # instance SearXNG sendiri (opsional)
     "max_steps": 40,                      # maks. langkah agent per tugas
     "stream": True,                       # streaming (fallback otomatis)
+    "superpowers": True,                  # metodologi Superpowers (skill + SOP)
+    "gates": True,                        # gate keras: approval, TDD, verifikasi
 }
 
 
@@ -140,10 +162,20 @@ BG_GREEN = "\033[42m"
 
 
 def term_width(default=78):
+    """Lebar terminal. Di HP/Termux layarnya sempit (sering 30-45 kolom), jadi
+    JANGAN dipaksa minimal 50 — nanti panel & wrapping-nya jebol ke samping."""
     try:
-        return max(50, min(100, shutil.get_terminal_size().columns))
+        cols = shutil.get_terminal_size().columns
     except Exception:
         return default
+    if not cols or cols <= 0:
+        return default
+    return max(24, min(100, cols))
+
+
+def is_narrow():
+    """HP mode: layar sempit, hemat hiasan biar gak berantakan."""
+    return term_width() < 60
 
 
 def _visible_len(s):
@@ -296,15 +328,30 @@ def intro_animation(duration=1.8, load_duration=1.8):
 
 def banner():
     w = term_width()
-    title = f"Agent CLI v{VERSION}  ·  thinking + AI search (DDG / SearXNG)"
+    title = f"Agent CLI v{VERSION}  ·  🦸 Superpowers + thinking + AI search"
     line = "═" * w
     print(f"{FG_CYAN}{BOLD}{line}{RESET}")
     print(f"{FG_CYAN}{BOLD}{title.center(w)}{RESET}")
     print(f"{FG_CYAN}{BOLD}{line}{RESET}")
-    print(
-        f"{DIM}Ketik tugas biasa buat agent (superpowers: bash, file, web_search, web_fetch), "
-        f"'/intro' buat animasi lagi, '/help' buat daftar perintah.{RESET}\n"
-    )
+    n_skills = len(load_skills())
+    if n_skills:
+        print(
+            f"{DIM}Ketik tugas biasa buat agent. Metodologi Superpowers aktif "
+            f"({n_skills} skill: brainstorm → approval → plan → TDD → verifikasi).{RESET}"
+        )
+        print(
+            f"{DIM}'/skills' lihat skill, '/superpowers' atur metodologi, "
+            f"'/help' daftar perintah, '/intro' animasi lagi.{RESET}\n"
+        )
+    else:
+        print(
+            f"{FG_RED}{BOLD}⚠ Folder skills/ gak ketemu — Superpowers MATI, agent "
+            f"jalan mode polos.{RESET}"
+        )
+        print(
+            f"{FG_YELLOW}  Clone repo-nya lengkap biar dapet 14 skill:{RESET}\n"
+            f"{FG_YELLOW}  git clone https://github.com/EdwardsVD/Agent.git{RESET}\n"
+        )
 
 
 def toolbar(state):
@@ -342,8 +389,20 @@ def toolbar(state):
     pad = max(0, w - _visible_len(line1))
     line1 += f"{BG_DARKGREY}{' ' * pad}{RESET}"
 
+    n_skills = len(load_skills())
+    sp_on = bool(state.config.get("superpowers", True)) and n_skills > 0
+    gates_on = sp_on and state.config.get("gates", True)
+    if not n_skills:
+        sp_text = " 🦸 Superpowers: OFF (skills/ gak ada) "
+        sp_color = FG_RED
+    else:
+        sp_text = f" 🦸 Superpowers: {'ON' if sp_on else 'OFF'}"
+        sp_text += f" (gates {'ON' if gates_on else 'OFF'}) " if sp_on else " "
+        sp_color = FG_GREEN if sp_on else FG_GREY
+
     line2_text = f" Status: {conn_text} "
     line2 = f"{BG_DARKGREY}{conn_color}{BOLD}{line2_text}{RESET}"
+    line2 += f"{BG_DARKGREY}{sp_color}{BOLD}{sp_text}{RESET}"
     line2 += f"{BG_DARKGREY}{DIM} Endpoint: {state.config.get('base_url', '-')} {RESET}"
     pad2 = max(0, w - _visible_len(line2))
     line2 += f"{BG_DARKGREY}{' ' * pad2}{RESET}"
@@ -405,6 +464,16 @@ def _action_label(tool_name, args):
             ),
         ),
         "web_fetch": ("📄 Fetch", str(a.get("url", "?"))),
+        "skill": (
+            "🦸 Skill",
+            "{}{}".format(
+                a.get("name") or a.get("skill") or "?",
+                f" / {a.get('resource')}" if a.get("resource") else "",
+            ),
+        ),
+        "list_skills": ("🦸 Skills", "daftar semua skill Superpowers"),
+        "todo_write": ("📋 Rencana", f"{len(a.get('todos') or [])} task"),
+        "ask_user": ("🙋 Tanya", str(a.get("question", "?"))[:100]),
     }
     return styles.get(tool_name, (f"⚙ {tool_name}", json.dumps(a, ensure_ascii=False)[:120]))
 
@@ -445,6 +514,59 @@ def done_line(summary):
     for line in _wrap_lines(summary, w):
         print(f"{FG_GREEN}{line}{RESET}")
     print()
+
+
+# --- tampilan khusus Superpowers -------------------------------------------
+
+def skill_line(key, purpose=""):
+    tail = f" {DIM}→ {purpose}{RESET}" if purpose else ""
+    print(f"{FG_CYAN}{BOLD}🦸 Using skill{RESET} {FG_CYAN}{key}{RESET}{tail}")
+
+
+def gate_line(text):
+    """Blok merah waktu disiplin Superpowers nge-block aksi agent."""
+    w = term_width()
+    lines = text.splitlines() or [""]
+    head = lines[0]
+    print(f"{FG_RED}{BOLD}🛑 {head}{RESET}")
+    for line in lines[1:]:
+        for wrapped in _wrap_lines(line, w - 3):
+            print(f"{FG_RED}{DIM}   {wrapped}{RESET}")
+    print()
+
+
+TODO_MARK = {
+    "done": ("✔", FG_GREEN),
+    "in_progress": ("▶", FG_YELLOW),
+    "blocked": ("✖", FG_RED),
+    "pending": ("○", FG_GREY),
+}
+
+
+def todo_panel(todos):
+    w = term_width()
+    done = sum(1 for t in todos if t.get("status") == "done")
+    title = f" 📋 Rencana kerja  ({done}/{len(todos)} beres) "
+    print(f"{BG_DARKGREY}{FG_WHITE}{BOLD}{title.ljust(w)}{RESET}")
+    for t in todos:
+        mark, color = TODO_MARK.get(t.get("status", "pending"), TODO_MARK["pending"])
+        style = DIM if t.get("status") == "done" else ""
+        print(f"  {color}{BOLD}{mark}{RESET} {style}{t.get('task', '')}{RESET}")
+    print()
+
+
+def question_panel(question, options):
+    w = term_width()
+    print()
+    print(f"{BG_BLUE}{FG_WHITE}{BOLD}{' 🙋 Butuh keputusan kamu '.ljust(w)}{RESET}")
+    for line in _wrap_lines(question, w - 2):
+        print(f"{FG_WHITE}{BOLD} {line}{RESET}")
+    for i, opt in enumerate(options, 1):
+        print(f"   {FG_CYAN}{BOLD}{i}.{RESET} {FG_CYAN}{opt}{RESET}")
+    if options:
+        print(f"{DIM}   (ketik nomor / jawaban bebas, Enter = pilihan 1){RESET}")
+    else:
+        print(f"{DIM}   (ketik jawaban kamu, Enter = setuju){RESET}")
 
 
 # ============================================================================
@@ -1220,6 +1342,561 @@ def tool_web_fetch(args, cfg):
         return f"[Error web_fetch: {e}]"
 
 
+# ============================================================================
+# SUPERPOWERS — skill library (obra/superpowers) + disiplin kerja (workflow gates)
+# ============================================================================
+# Ini INTI "Superpowers": bukan cuma tools, tapi SOP kerja yang dipaksain ke
+# agent — brainstorm dulu -> minta approval -> plan/todo -> TDD (test dulu) ->
+# verifikasi bukti -> baru boleh bilang selesai.
+#
+# Skill markdown ada di folder skills/ (di-vendor dari github.com/obra/superpowers,
+# MIT © Jesse Vincent). Agent baca skill on-demand lewat tool `skill` — persis
+# pola progressive disclosure-nya Claude Code, jadi context gak jebol.
+
+SKILLS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills")
+
+# alias biar model gampang manggil skill walau namanya beda dikit
+SKILL_ALIASES = {
+    "brainstorm": "brainstorming",
+    "design": "brainstorming",
+    "spec": "brainstorming",
+    "tdd": "test-driven-development",
+    "test": "test-driven-development",
+    "testing": "test-driven-development",
+    "plan": "writing-plans",
+    "planning": "writing-plans",
+    "write-plan": "writing-plans",
+    "execute": "executing-plans",
+    "debug": "systematic-debugging",
+    "debugging": "systematic-debugging",
+    "bug": "systematic-debugging",
+    "verify": "verification-before-completion",
+    "verification": "verification-before-completion",
+    "review": "requesting-code-review",
+    "code-review": "requesting-code-review",
+    "finish": "finishing-a-development-branch",
+    "worktree": "using-git-worktrees",
+    "worktrees": "using-git-worktrees",
+    "subagent": "subagent-driven-development",
+    "parallel": "dispatching-parallel-agents",
+    "skills": "using-superpowers",
+    "superpowers": "using-superpowers",
+    "bootstrap": "using-superpowers",
+    "write-skill": "writing-skills",
+}
+
+_SKILL_CACHE = {"loaded": False, "skills": {}}
+
+
+def _parse_frontmatter(text):
+    """Ambil YAML frontmatter sederhana (name/description) dari SKILL.md."""
+    meta, body = {}, text
+    stripped = text.lstrip()
+    if stripped.startswith("---"):
+        end = stripped.find("\n---", 3)
+        if end != -1:
+            raw = stripped[3:end]
+            body = stripped[end + 4:].lstrip("\n")
+            key = None
+            for line in raw.splitlines():
+                m = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", line)
+                if m:
+                    key = m.group(1).strip()
+                    meta[key] = m.group(2).strip().strip('"').strip("'")
+                elif key and line.strip():
+                    meta[key] = (meta[key] + " " + line.strip()).strip()
+    return meta, body
+
+
+def load_skills(force=False):
+    """Muat semua skill dari folder skills/ (1 folder = 1 skill + resource-nya)."""
+    if _SKILL_CACHE["loaded"] and not force:
+        return _SKILL_CACHE["skills"]
+    skills = {}
+    if os.path.isdir(SKILLS_DIR):
+        for entry in sorted(os.listdir(SKILLS_DIR)):
+            sdir = os.path.join(SKILLS_DIR, entry)
+            spath = os.path.join(sdir, "SKILL.md")
+            if not os.path.isfile(spath):
+                continue
+            try:
+                with open(spath, "r", errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            meta, body = _parse_frontmatter(text)
+            resources = []
+            for root, dirs, files in os.walk(sdir):
+                dirs[:] = [d for d in sorted(dirs) if not d.startswith(".")]
+                for fn in sorted(files):
+                    if root == sdir and fn == "SKILL.md":
+                        continue
+                    rel = os.path.relpath(os.path.join(root, fn), sdir)
+                    resources.append(rel.replace(os.sep, "/"))
+            skills[entry] = {
+                "key": entry,
+                "name": meta.get("name", entry),
+                "description": meta.get("description", "").strip(),
+                "body": body.strip(),
+                "dir": sdir,
+                "resources": resources,
+            }
+    _SKILL_CACHE["loaded"] = True
+    _SKILL_CACHE["skills"] = skills
+    return skills
+
+
+def resolve_skill(query):
+    """Cari skill dari nama bebas: 'superpowers:tdd', 'TDD', 'test driven'…"""
+    skills = load_skills()
+    if not query:
+        return None
+    q = str(query).strip().lower()
+    q = q.split(":")[-1] if ":" in q else q
+    q = re.sub(r"[\s_]+", "-", q).strip("-")
+    q = re.sub(r"(-skill|\.md)$", "", q)
+    if q in skills:
+        return skills[q]
+    if q in SKILL_ALIASES and SKILL_ALIASES[q] in skills:
+        return skills[SKILL_ALIASES[q]]
+    for key in skills:
+        if q and (q in key or key in q):
+            return skills[key]
+    words = [w for w in q.split("-") if len(w) > 3]
+    for key, sk in skills.items():
+        hay = (key + " " + sk["description"]).lower()
+        if words and all(w in hay for w in words):
+            return sk
+    return None
+
+
+def skills_index_text(max_desc=150):
+    """Daftar skill (nama + deskripsi) buat ditempel di system prompt."""
+    skills = load_skills()
+    lines = []
+    for key, sk in skills.items():
+        desc = " ".join(sk["description"].split())
+        if len(desc) > max_desc:
+            desc = desc[:max_desc].rstrip() + "…"
+        lines.append(f"- {key} — {desc}")
+    return "\n".join(lines)
+
+
+def bootstrap_skill_text():
+    """Isi using-superpowers/SKILL.md — bootstrap yang bikin skill auto-trigger."""
+    sk = load_skills().get("using-superpowers")
+    return sk["body"] if sk else ""
+
+
+# ---------------------------------------------------------------------------
+# WORKFLOW LEDGER — catatan disiplin kerja untuk 1 tugas
+# ---------------------------------------------------------------------------
+
+TEST_PATH_RE = re.compile(
+    r"(^|/)(tests?|spec|specs|__tests__)/|(^|/)test_[^/]+$|_test\.[A-Za-z0-9]+$"
+    r"|\.test\.[A-Za-z0-9]+$|\.spec\.[A-Za-z0-9]+$|(^|/)[^/]*_spec\.[A-Za-z0-9]+$",
+    re.IGNORECASE,
+)
+
+VERIFY_CMD_RE = re.compile(
+    r"\b(pytest|unittest|jest|vitest|mocha|rspec|phpunit|tox|nox|ctest|shellcheck"
+    r"|py_compile|mypy|ruff|flake8|pylint|eslint|tsc|gradle|mvn|dotnet|cargo|go)\b"
+    r"|\bnpm\s+(run\s+)?test\b|\byarn\s+test\b|\bpnpm\s+(run\s+)?test\b"
+    r"|\bmake\s+(test|check|lint)\b|\bbash\s+-n\b|\bnode\s+--check\b"
+    r"|\bpython3?\s+-m\s+\w+",
+    re.IGNORECASE,
+)
+
+SMOKE_CMD_RE = re.compile(
+    r"\b(python3?|node|deno|bun|ruby|perl|php|go\s+run|java|bash|sh)\b\s+\S+",
+    re.IGNORECASE,
+)
+
+# Perintah yang KELIHATANNYA verifikasi tapi sebenarnya gak ngebuktiin apa-apa.
+# Tanpa ini, agent bisa "lolos" gate cuma dengan `python3 --version`.
+FAKE_VERIFY_RE = re.compile(
+    r"^\s*\S*\b(python3?|node|deno|bun|ruby|php|java|go|cargo|npm|yarn|pnpm)\b"
+    r"\s+(--version|-V|--help|-h|version)\s*$"
+    r"|^\s*(echo|true|:|cat|ls|pwd|cd|which|type|whoami|clear|touch|mkdir)\b",
+    re.IGNORECASE,
+)
+
+# nama gate -> berapa kali boleh nge-block dalam 1 tugas (biar gak loop selamanya)
+GATE_LIMITS = {
+    "skill": 1,      # wajib invoke skill dulu (using-superpowers)
+    "approval": 1,   # wajib approval manusia sebelum implementasi (brainstorming)
+    "tdd": 1,        # wajib test dulu sebelum kode produksi (TDD)
+    "plan": 1,       # wajib todo list sebelum bilang selesai (writing-plans)
+    "verify": 2,     # wajib bukti verifikasi sebelum DONE (verification-before-completion)
+    "review": 1,     # wajib self-review sebelum DONE (requesting-code-review)
+}
+
+
+ASSERT_RE = re.compile(
+    r"\bassert\b|\bexpect\s*\(|\bshould\b|\.to(Be|Equal|Throw|Match)\b"
+    r"|\bassertEqual\b|\bassertTrue\b|\bassertRaises\b|\bt\.Error\b|\bXCTAssert",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_real_test(content):
+    """Test beneran minimal punya assertion. File kosong / cuma `pass` gak ngitung."""
+    text = (content or "").strip()
+    if len(text) < 20:
+        return False
+    return bool(ASSERT_RE.search(text))
+
+
+class Workflow:
+    """Ledger disiplin kerja: skill apa yang dipakai, approval, test, verifikasi."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.skills = []          # skill yang sudah dibaca
+        self.todos = []           # [{"task":…, "status":…}]
+        self.approvals = []       # jawaban manusia lewat ask_user
+        self.writes = []          # file yang ditulis/diedit
+        self.tests = []           # file test yang ditulis
+        self.verifications = []   # perintah verifikasi yang benar-benar dijalankan
+        self.reviews = 0          # berapa kali baca ulang file sendiri (self review)
+        self.last_write_step = -1
+        self.last_verify_step = -1
+        self.step = 0
+        self.fired = {}
+        self.classification = None
+
+    # -- pencatatan ---------------------------------------------------------
+    def note_skill(self, key):
+        if key not in self.skills:
+            self.skills.append(key)
+        if key == "brainstorming" and not self.classification:
+            self.classification = "pending"
+
+    def note_todos(self, todos):
+        self.todos = todos
+
+    def note_approval(self, question, answer):
+        self.approvals.append({"q": question, "a": answer})
+
+    def note_write(self, path, step, content=None):
+        path = str(path).replace(os.sep, "/")
+        if path not in self.writes:
+            self.writes.append(path)
+        if TEST_PATH_RE.search(path) and path not in self.tests:
+            # File test kosong / cuma placeholder gak dihitung — itu ngakalin gate.
+            if content is None or _looks_like_real_test(content):
+                self.tests.append(path)
+        self.last_write_step = step
+
+    def note_bash(self, command, result, step):
+        cmd = str(command)
+        if FAKE_VERIFY_RE.search(cmd.strip()):
+            return  # `python3 --version` / `echo ok` bukan bukti apa-apa
+        looks_verify = bool(VERIFY_CMD_RE.search(cmd)) or bool(SMOKE_CMD_RE.search(cmd))
+        failed = "[exit code:" in (result or "") or "[Error bash" in (result or "")
+        if looks_verify and not failed:
+            self.verifications.append({"cmd": cmd[:200], "step": step})
+            self.last_verify_step = step
+            if TEST_PATH_RE.search(cmd) or re.search(r"\b(pytest|jest|vitest|unittest|test)\b", cmd, re.I):
+                if cmd not in self.tests:
+                    self.tests.append(cmd)
+
+    def note_read(self, path):
+        self.reviews += 1
+
+    # -- ringkasan ----------------------------------------------------------
+    def has_pending_verification(self):
+        return bool(self.writes) and self.last_verify_step < self.last_write_step
+
+    def summary(self):
+        return {
+            "skills": list(self.skills),
+            "todos": len(self.todos),
+            "approvals": len(self.approvals),
+            "files": len(self.writes),
+            "tests": len(self.tests),
+            "verifications": len(self.verifications),
+        }
+
+    def can_fire(self, gate):
+        used = self.fired.get(gate, 0)
+        if used >= GATE_LIMITS.get(gate, 1):
+            return False
+        self.fired[gate] = used + 1
+        return True
+
+
+WORKFLOW = Workflow()
+
+
+def _gates_on(cfg):
+    # Kalau folder skills/ gak ada (mis. user cuma nyalin main.py doang), gate
+    # yang nyuruh "invoke skill" bakal mustahil dipenuhi. Jadi matikan aja —
+    # agent tetap jalan mode polos, gak kejebak loop.
+    if not load_skills():
+        return False
+    return bool(cfg.get("superpowers", True)) and bool(cfg.get("gates", True))
+
+
+def pre_action_gate(tool_name, args, wf, cfg):
+    """Gate SEBELUM aksi jalan. Nge-block write/edit kalau disiplinnya dilewatin.
+
+    Return: pesan gate (string) kalau harus di-block, atau None kalau boleh lanjut.
+    """
+    if not _gates_on(cfg):
+        return None
+    if tool_name not in ("write_file", "edit_file"):
+        return None
+
+    path = str((args or {}).get("path", ""))
+
+    # 1) using-superpowers: skill dulu sebelum aksi apa pun
+    if not wf.skills and wf.can_fire("skill"):
+        return (
+            "GATE [using-superpowers] — DITOLAK, kamu belum baca skill apa pun.\n"
+            "Aturannya: kalau ada 1% kemungkinan sebuah skill relevan, kamu WAJIB invoke skill itu "
+            "SEBELUM aksi apa pun (termasuk sebelum nulis file).\n"
+            "Langkah kamu sekarang: ACTION: skill dengan INPUT {\"name\": \"brainstorming\"} "
+            "(kerjaan kreatif/bikin fitur) atau {\"name\": \"systematic-debugging\"} (benerin bug). "
+            "Habis itu ikutin isinya."
+        )
+
+    # 2) brainstorming HARD-GATE: approval manusia sebelum implementasi
+    if not wf.approvals and wf.can_fire("approval"):
+        return (
+            "GATE [brainstorming HARD-GATE] — DITOLAK, kamu belum dapat persetujuan manusia.\n"
+            "Jangan nulis kode apa pun sebelum kamu bilang ke partner manusia kamu apa rencanamu "
+            "DAN dia setuju. Ceremony-nya boleh kecil, gate-nya gak pernah kecil.\n"
+            "Langkah kamu sekarang: ACTION: ask_user dengan INPUT berisi klasifikasi jalur "
+            "(spike / bounded / architectural) + desain singkat: pendekatan, file yang disentuh, "
+            "cara nge-test. Contoh: {\"question\": \"Rencana: <desain singkat>. Setuju?\", "
+            "\"options\": [\"Setuju, lanjut\", \"Ubah dulu\"]}"
+        )
+
+    # 3) TDD: test dulu (RED) sebelum kode produksi
+    is_test_file = bool(TEST_PATH_RE.search(path.replace(os.sep, "/")))
+    if (
+        tool_name == "write_file"
+        and not is_test_file
+        and not wf.tests
+        and _looks_like_code(path)
+        and wf.can_fire("tdd")
+    ):
+        return (
+            "GATE [test-driven-development] — DITOLAK: NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST.\n"
+            f"Kamu mau nulis kode produksi ({path}) tapi belum ada test yang kamu tulis & lihat GAGAL.\n"
+            "Langkah kamu sekarang: (1) write_file test-nya dulu (mis. test_xxx.py / xxx.test.js), "
+            "(2) jalanin lewat bash dan LIHAT dia MERAH/gagal, (3) baru tulis kode minimal biar HIJAU.\n"
+            "Kalau ini beneran gak bisa di-test (config, aset statis, dokumen, prototipe buangan), "
+            "bilang alasannya di THINK lalu lanjut — gate ini cuma sekali."
+        )
+    return None
+
+
+CODE_EXT = (
+    ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".rb",
+    ".java", ".kt", ".php", ".c", ".h", ".cpp", ".hpp", ".cs", ".swift", ".sh",
+    ".bash", ".pl", ".lua", ".dart", ".scala", ".ex", ".exs",
+)
+
+
+def _looks_like_code(path):
+    return str(path).lower().endswith(CODE_EXT)
+
+
+def pre_done_gate(wf, cfg):
+    """Gate SEBELUM agent boleh bilang DONE. Return pesan gate atau None."""
+    if not _gates_on(cfg):
+        return None
+
+    # 1) skill sama sekali gak dipakai
+    if not wf.skills and wf.can_fire("skill"):
+        return (
+            "GATE [using-superpowers] — BELUM SELESAI. Kamu ngerjain tugas ini tanpa invoke skill "
+            "satu pun. Invoke skill yang relevan dulu (ACTION: skill), ikutin isinya, baru DONE."
+        )
+
+    if not wf.writes:
+        # tugas tanya-jawab/riset: cukup pastikan skill dipakai
+        return None
+
+    # 2) writing-plans: kerjaan multi-langkah wajib punya todo list yang kelar
+    if not wf.todos and wf.can_fire("plan"):
+        return (
+            "GATE [writing-plans] — BELUM SELESAI. Kamu nyentuh "
+            f"{len(wf.writes)} file tanpa rencana yang kelihatan.\n"
+            "Langkah kamu sekarang: ACTION: todo_write — pecah kerjaan jadi task kecil "
+            "dan tandai mana yang sudah beres, biar partner manusia kamu bisa ngecek."
+        )
+
+    # 3) verification-before-completion: NO COMPLETION CLAIMS WITHOUT FRESH EVIDENCE
+    if wf.has_pending_verification() and wf.can_fire("verify"):
+        changed = ", ".join(wf.writes[-5:])
+        return (
+            "GATE [verification-before-completion] — DITOLAK.\n"
+            "THE IRON LAW: NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.\n"
+            f"Kamu ngubah file ({changed}) sesudah verifikasi terakhir. Kalau kamu belum jalanin "
+            "perintah verifikasinya DI LANGKAH INI, kamu gak boleh bilang selesai.\n"
+            "Langkah kamu sekarang: ACTION: bash — jalanin test/build/lint/syntax check yang "
+            "beneran (mis. python3 -m pytest, python3 -m py_compile file.py, node --check file.js, "
+            "npm test), BACA outputnya, baru DONE dengan menyertakan buktinya."
+        )
+
+    # 4) self review sebelum ngaku beres
+    if wf.reviews == 0 and wf.can_fire("review"):
+        return (
+            "GATE [requesting-code-review] — BELUM SELESAI. Kamu belum baca ulang hasil kerjamu "
+            "sendiri. Langkah kamu sekarang: ACTION: read_file file yang kamu ubah, cek beneran "
+            "sesuai permintaan (gak ada TODO nyangkut, gak ada kode setengah jadi), baru DONE."
+        )
+    return None
+
+
+def workflow_record(tool_name, args, result, wf, step):
+    """Catat efek 1 aksi ke ledger disiplin kerja."""
+    args = args or {}
+    if tool_name == "skill":
+        sk = resolve_skill(args.get("name") or args.get("skill") or "")
+        if sk:
+            wf.note_skill(sk["key"])
+    elif tool_name in ("write_file", "edit_file"):
+        if not str(result).startswith("[Error"):
+            body = args.get("content") if tool_name == "write_file" else args.get("new")
+            wf.note_write(args.get("path", "?"), step, content=body)
+    elif tool_name == "bash":
+        wf.note_bash(args.get("command", ""), result, step)
+    elif tool_name == "read_file":
+        wf.note_read(args.get("path", ""))
+    elif tool_name == "todo_write":
+        pass  # dicatat langsung di tool-nya
+
+
+# ---------------------------------------------------------------------------
+# TOOLS SUPERPOWERS
+# ---------------------------------------------------------------------------
+
+def tool_list_skills(args, cfg):
+    skills = load_skills()
+    if not skills:
+        return ("[Error list_skills: folder skills/ kosong. Pastikan kamu `git clone` "
+                "repo-nya lengkap, bukan cuma main.py.]")
+    lines = [f"{len(skills)} skill Superpowers tersedia (pakai tool `skill` buat baca):", ""]
+    for key, sk in skills.items():
+        lines.append(f"- {key}: {' '.join(sk['description'].split())}")
+        if sk["resources"]:
+            lines.append(f"    resource: {', '.join(sk['resources'])}")
+    return "\n".join(lines)
+
+
+def tool_skill(args, cfg):
+    """Baca isi 1 skill (atau resource di dalamnya) — progressive disclosure."""
+    name = args.get("name") or args.get("skill") or args.get("query") or ""
+    sk = resolve_skill(name)
+    if not sk:
+        avail = ", ".join(load_skills().keys()) or "(kosong)"
+        return f"[Error skill: '{name}' gak ketemu. Yang ada: {avail}]"
+
+    resource = (args.get("resource") or args.get("file") or "").strip()
+    if resource:
+        rel = resource.replace("\\", "/").lstrip("/")
+        full = os.path.abspath(os.path.join(sk["dir"], rel))
+        if not full.startswith(os.path.abspath(sk["dir"])) or not os.path.isfile(full):
+            return (f"[Error skill: resource '{resource}' gak ada di skill {sk['key']}. "
+                    f"Yang ada: {', '.join(sk['resources']) or '-'}]")
+        try:
+            with open(full, "r", errors="replace") as f:
+                text = f.read()
+        except OSError as e:
+            return f"[Error skill: gagal baca resource ({e})]"
+        return f"=== SKILL {sk['key']} / {rel} ===\n{text.strip()}"
+
+    body = sk["body"]
+    extra = ""
+    if sk["resources"]:
+        extra = ("\n\nRESOURCE TAMBAHAN (baca dengan ACTION: skill "
+                 f"INPUT {{\"name\": \"{sk['key']}\", \"resource\": \"<nama>\"}}):\n- "
+                 + "\n- ".join(sk["resources"]))
+    return (
+        f"=== SKILL: {sk['key']} ===\n"
+        f"{sk['description']}\n\n"
+        f"{body}{extra}\n\n"
+        f"[Kamu sudah invoke skill '{sk['key']}'. Umumkan 'Using {sk['key']} to <tujuan>' "
+        f"di THINK berikutnya, dan IKUTI isinya persis — kalau ada checklist, bikin todo per item.]"
+    )
+
+
+def _normalize_todos(raw):
+    todos = []
+    if isinstance(raw, str):
+        raw = [line.strip("-* ").strip() for line in raw.splitlines() if line.strip()]
+    if not isinstance(raw, list):
+        return todos
+    for item in raw:
+        if isinstance(item, str):
+            todos.append({"task": item.strip(), "status": "pending"})
+        elif isinstance(item, dict):
+            task = item.get("task") or item.get("content") or item.get("title") or ""
+            status = str(item.get("status", "pending")).lower().strip()
+            if status in ("in progress", "in-progress", "doing", "wip", "aktif"):
+                status = "in_progress"
+            elif status in ("done", "complete", "completed", "selesai", "beres"):
+                status = "done"
+            elif status in ("blocked", "stuck", "macet"):
+                status = "blocked"
+            else:
+                status = "pending"
+            if task:
+                todos.append({"task": str(task).strip(), "status": status})
+    return todos
+
+
+def tool_todo_write(args, cfg):
+    """Bikin / update checklist tugas (kelihatan di terminal, kayak Claude Code)."""
+    todos = _normalize_todos(args.get("todos") or args.get("items") or args.get("tasks"))
+    if not todos:
+        return "[Error todo_write: 'todos' wajib diisi, contoh {\"todos\":[{\"task\":\"...\",\"status\":\"pending\"}]}]"
+    WORKFLOW.note_todos(todos)
+    todo_panel(todos)
+    done = sum(1 for t in todos if t["status"] == "done")
+    return (f"[OK] Checklist diperbarui: {done}/{len(todos)} beres.\n"
+            + "\n".join(f"  [{'x' if t['status'] == 'done' else ' '}] {t['task']} ({t['status']})"
+                        for t in todos))
+
+
+def tool_ask_user(args, cfg):
+    """Tanya / minta persetujuan ke partner manusia — gate approval Superpowers."""
+    question = str(args.get("question") or args.get("prompt") or "").strip()
+    if not question:
+        return "[Error ask_user: 'question' wajib diisi]"
+    options = args.get("options") or []
+    if isinstance(options, str):
+        options = [o.strip() for o in options.split("|") if o.strip()]
+    options = [str(o) for o in options if str(o).strip()][:6]
+
+    question_panel(question, options)
+    if not sys.stdin or not sys.stdin.isatty():
+        WORKFLOW.note_approval(question, "[non-interaktif: dianggap setuju]")
+        return ("[OK] Mode non-interaktif (stdin bukan terminal) — dianggap SETUJU. "
+                "Lanjut, tapi tetap catat asumsimu di ringkasan akhir.")
+    try:
+        answer = input(f"{FG_CYAN}{BOLD}Jawab ›{RESET} ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        WORKFLOW.note_approval(question, "[dibatalkan]")
+        return "[OK] Partner manusia gak jawab (batal). Berhenti dan tanya lagi nanti."
+    if not answer:
+        answer = options[0] if options else "(setuju)"
+    if re.fullmatch(r"[1-9]", answer) and options and int(answer) <= len(options):
+        answer = options[int(answer) - 1]
+    WORKFLOW.note_approval(question, answer)
+    print()
+    return (f"[OK] Jawaban partner manusia: {answer}\n"
+            "[Gate approval terpenuhi. Kerjakan PERSIS yang disetujui — kalau jawabannya minta "
+            "perubahan, revisi dulu rencananya dan tanya lagi.]")
+
+
 TOOLS = {
     "list_files": tool_list_files,
     "grep_files": tool_grep_files,
@@ -1229,6 +1906,11 @@ TOOLS = {
     "bash": tool_bash,
     "web_search": tool_web_search,
     "web_fetch": tool_web_fetch,
+    # --- superpowers ---
+    "skill": tool_skill,
+    "list_skills": tool_list_skills,
+    "todo_write": tool_todo_write,
+    "ask_user": tool_ask_user,
 }
 
 
@@ -1236,7 +1918,7 @@ TOOLS = {
 # AGENT: prompt sistem, parser respons, loop THINK -> ACTION -> OBSERVATION
 # ============================================================================
 
-SYSTEM_PROMPT = """Kamu adalah coding agent SUPER POWER ala opencode / Claude Code yang jalan di terminal. Kamu punya akses penuh ke bash, file system workspace, DAN web (DuckDuckGo / SearXNG) buat ngerjain tugas apa pun dengan akurat & lengkap.
+BASE_SYSTEM_PROMPT = """Kamu adalah coding agent SUPER POWER ala opencode / Claude Code yang jalan di terminal. Kamu punya akses penuh ke bash, file system workspace, DAN web (DuckDuckGo / SearXNG). Kamu kerja bareng seorang PARTNER MANUSIA — bukan buat dia, tapi SAMA dia.
 
 ATURAN RESPONS — balas HANYA dengan pola berikut, tanpa teks lain di luar pola:
 
@@ -1249,28 +1931,165 @@ atau kalau tugas sudah selesai:
 
 DONE: <jawaban / ringkasan final>
 
-TOOLS (superpowers):
-- list_files {"path": ".", "depth": 3}        jelajah isi folder (+ ukuran file)
-- grep_files {"pattern": "...", "path": ".", "regex": false, "limit": 50}  cari teks di banyak file
-- read_file  {"path": "...", "offset": 0, "limit": 0}   baca file (bisa per-baris)
-- write_file {"path": "...", "content": "..."}
-- edit_file  {"path": "...", "old": "...", "new": "..."}   pencocokan fuzzy, toleran whitespace
-- bash       {"command": "...", "timeout": 120}   jalankan perintah apa pun (maks 600 dtk, cwd=workspace)
-- web_search {"query": "...", "limit": 5, "engine": "auto|ddg|searxng"}   cari info terkini
-- web_fetch  {"url": "https://..."}             baca isi halaman web (dokumentasi, wiki, dll)
+Satu ACTION per balasan. Tunggu OBSERVATION sebelum lanjut.
 
-CARA MIKIR (superpower loop):
-1. THINK: pecah tugas jadi langkah kecil, putuskan apa yang perlu dicek / dibuat / dicari.
-2. EKSPLORASI: pahami state workspace dulu — list_files, grep_files, read_file. JANGAN menebak isi file.
-3. RISET: kalau butuh fakta terkini, versi library, API, dokumentasi, atau hal yang kamu ragu -> web_search, lalu web_fetch halaman paling relevan. Baca hasilnya, THINK lagi, kalau masih kurang search/fetch sekali lagi.
-4. BANGUN: write_file / edit_file. Lalu pakai bash buat JALANKAN & TEST kode kamu (python3, node, pip, git, dll). Kalau error, baca pesannya, perbaiki, ulangi sampai bener.
-5. VERIFIKASI: read_file hasil akhir, jalankan syntax check/test sekali lagi, pastikan tidak ada yang kurang.
-6. DONE: ringkasan singkat + daftar file yang dibuat + sumber [1](url), [2](url) kalau pakai info dari web.
+TOOLS:
+- skill       {"name": "brainstorming", "resource": ""}   BACA skill Superpowers (WAJIB, lihat bagian di bawah)
+- list_skills {}                                 lihat semua skill yang tersedia
+- todo_write  {"todos": [{"task": "...", "status": "pending|in_progress|done|blocked"}]}  checklist kerja
+- ask_user    {"question": "...", "options": ["Setuju", "Ubah dulu"]}   TANYA / minta persetujuan partner manusia
+- list_files  {"path": ".", "depth": 3}          jelajah isi folder (+ ukuran file)
+- grep_files  {"pattern": "...", "path": ".", "regex": false, "limit": 50}  cari teks di banyak file
+- read_file   {"path": "...", "offset": 0, "limit": 0}   baca file (bisa per-baris)
+- write_file  {"path": "...", "content": "..."}
+- edit_file   {"path": "...", "old": "...", "new": "..."}   pencocokan fuzzy, toleran whitespace
+- bash        {"command": "...", "timeout": 120}   jalankan apa pun (maks 600 dtk, cwd=workspace)
+- web_search  {"query": "...", "limit": 5, "engine": "auto|ddg|searxng"}   cari info terkini
+- web_fetch   {"url": "https://..."}             baca isi halaman web
+
+=============================================================================
+SUPERPOWERS — INI BUKAN OPSIONAL
+=============================================================================
+Kamu bukan agent yang langsung nyemplung ngoding. Kamu punya SKILL LIBRARY berisi
+metodologi kerja yang sudah teruji. Skill = disiplin, bukan saran.
+
+{bootstrap}
+
+SKILL YANG TERSEDIA (baca pakai ACTION: skill):
+{index}
+
+CARA PAKAI SKILL (progressive disclosure):
+Kamu cuma lihat NAMA + DESKRIPSI di atas. Isi lengkapnya kamu baca on-demand:
+    ACTION: skill
+    INPUT: {"name": "brainstorming"}
+Habis itu umumkan di THINK: "Using brainstorming to <tujuan>", lalu IKUTI ISINYA
+PERSIS. Kalau skill-nya punya checklist, bikin todo_write satu item per langkah.
+
+Skill punya resource tambahan yang dirujuk di dalamnya. Baca gitu juga:
+    INPUT: {"name": "test-driven-development", "resource": "writing-good-tests.md"}
+
+PENTING — ADAPTASI HARNESS:
+Skill Superpowers ditulis buat harness yang punya subagent. Harness INI belum
+punya. Baca ini SEKALI di awal biar kamu gak salah pakai skill:
+    INPUT: {"name": "using-superpowers", "resource": "references/agent-cli-tools.md"}
+Intinya: skill subagent-driven-development & dispatching-parallel-agents GAK BISA
+dipakai apa adanya — pakai executing-plans dan review sendiri. JANGAN pura-pura
+punya subagent, JANGAN ngarang hasil review dari "agent lain".
+
+=============================================================================
+ALUR KERJA WAJIB (SOP)
+=============================================================================
+0. SKILL CHECK — SEBELUM aksi apa pun (termasuk sebelum nanya, sebelum list_files):
+   pikir "skill mana yang relevan?" lalu invoke. Kalau peluangnya cuma 1% pun, invoke.
+   - "bikin/tambah/ubah fitur"  -> skill brainstorming DULU
+   - "ada bug / error / gagal"  -> skill systematic-debugging DULU
+   - "punya spec, bikin plan"   -> skill writing-plans
+   - "mau ngoding"              -> skill test-driven-development
+   - "mau bilang selesai"       -> skill verification-before-completion
+
+1. BRAINSTORM & APPROVAL GATE — klasifikasikan dulu: spike / bounded / architectural.
+   Sampaikan klasifikasinya. Tanya hal yang penting SATU per satu pakai ask_user.
+   Lalu presentasikan desain singkat (pendekatan, file yang disentuh, cara nge-test)
+   dan MINTA PERSETUJUAN pakai ask_user. JANGAN nulis kode sebelum dia bilang iya.
+   Ceremony boleh kecil buat tugas kecil — GATE APPROVAL-nya gak pernah kecil.
+
+2. RENCANA — todo_write: pecah jadi task kecil. Update statusnya sambil jalan
+   (in_progress -> done). Partner manusia kamu harus bisa lihat progresnya.
+
+3. EKSPLORASI & RISET — list_files/grep_files/read_file dulu, JANGAN nebak isi file.
+   Butuh fakta terkini/versi library/API? web_search lalu web_fetch, baru simpulkan.
+
+4. TDD — THE IRON LAW: NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST.
+   RED: tulis test-nya dulu -> jalanin lewat bash -> LIHAT DIA GAGAL (wajib, dan
+   gagalnya harus karena fiturnya belum ada, bukan karena typo).
+   GREEN: tulis kode paling minimal biar lulus -> jalanin -> lihat HIJAU.
+   REFACTOR: rapikan, tetap hijau. Ulangi buat perilaku berikutnya.
+   Nulis kode duluan? Hapus, mulai lagi dari test.
+
+5. DEBUG SISTEMATIS — NO FIXES WITHOUT ROOT CAUSE FIRST. Baca error-nya beneran,
+   bikin reproduksi terkecil, telusuri sampai akar, baru perbaiki. Nambal gejala =
+   gagal. Kalau nebak-nebak 2x gak jalan, berhenti nebak dan investigasi beneran.
+
+6. VERIFIKASI — NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.
+   Sebelum ngaku beres: jalanin perintah buktinya (pytest / npm test / py_compile /
+   node --check / build / lint), BACA outputnya, cek exit code. Belum jalanin di
+   langkah ini = belum boleh ngaku lulus. Dilarang bilang "harusnya sih jalan".
+
+7. SELF-REVIEW — read_file lagi hasil kerjamu. Cek satu-satu ke permintaan awal:
+   ada TODO nyangkut? ada kode setengah jadi? ada yang kelewat? Perbaiki dulu.
+
+8. DONE — ringkasan + daftar file + BUKTI verifikasi (perintah yang kamu jalanin +
+   hasilnya) + sumber [1](url) kalau pakai info web.
+
+=============================================================================
+RED FLAGS — kalau pikiran ini muncul, kamu lagi cari pembenaran. BERHENTI.
+=============================================================================
+| Pikiran                              | Kenyataan                                    |
+| "Ini gampang, gak usah pakai skill"  | Yang gampang sering berubah rumit. Invoke.   |
+| "Aku ngerti maksudnya kok"           | Ngerti konsep != pakai skill. Baca skill-nya.|
+| "Aku cek file dulu deh"              | Skill yang ngatur CARA ngecek. Skill duluan. |
+| "Terlalu sederhana buat minta izin"  | Desainnya boleh 2 kalimat. Approval tetap wajib.|
+| "Sekali ini aja skip TDD"            | Gak ada pengecualian tanpa izin partner.     |
+| "Nanti aja test-nya"                 | Test sesudah kode langsung lulus = gak bukti apa-apa.|
+| "Harusnya udah jalan sih"            | JALANIN perintahnya. Yakin != bukti.         |
+| "Linter lulus, berarti aman"         | Linter bukan compiler, bukan test.           |
+| "Udah aku tes manual tadi"           | Manual gak bisa diulang. Bikin test otomatis.|
+| "Sayang kalau kode ini dihapus"      | Sunk cost. Kode yang gak dipercaya = beban.  |
 
 ATURAN TAMBAHAN:
-- Jangan menyerah kalau bash error — baca outputnya dan perbaiki.
-- JSON INPUT boleh multi-baris tapi harus valid JSON (pakai \\n untuk newline di dalam string).
-- Jawab pakai bahasa yang dipakai user (default Indonesia)."""
+- Jangan menyerah kalau bash error — baca outputnya, cari akarnya, perbaiki.
+- JSON INPUT harus valid (pakai \\n untuk newline di dalam string).
+- Kalau gate (🛑 GATE [...]) muncul di OBSERVATION, itu disiplin Superpowers nge-block
+  kamu. JANGAN diakalin — kerjain persis yang dia minta, baru lanjut.
+- Jujur soal ketidakpastian. Lebih baik bilang "belum kebukti" daripada ngarang.
+- Jawab pakai bahasa yang dipakai user (default Indonesia).
+
+Instruksi langsung dari partner manusia menang di atas skill; skill menang di atas
+kebiasaan default kamu. Skip alur cuma kalau dia yang bilang skip."""
+
+
+LEAN_SYSTEM_PROMPT = """Kamu adalah coding agent ala opencode / Claude Code di terminal, dengan akses bash, file workspace, dan web.
+
+ATURAN RESPONS — balas HANYA dengan pola berikut:
+
+THINK: <rencana singkat>
+
+ACTION: <nama_tool>
+INPUT: <json satu baris>
+
+atau kalau selesai:
+
+DONE: <ringkasan final>
+
+TOOLS: list_files {"path":".","depth":3} · grep_files {"pattern":"...","path":"."} · read_file {"path":"...","offset":0,"limit":0} · write_file {"path":"...","content":"..."} · edit_file {"path":"...","old":"...","new":"..."} · bash {"command":"...","timeout":120} · web_search {"query":"...","limit":5} · web_fetch {"url":"..."} · todo_write {"todos":[...]} · ask_user {"question":"...","options":[...]} · skill {"name":"..."} · list_skills {}
+
+ALUR: THINK -> eksplorasi (jangan nebak isi file) -> riset web kalau perlu ->
+bikin/edit -> JALANIN & TEST pakai bash -> baca ulang hasilnya -> DONE dengan
+ringkasan + daftar file + sumber [1](url) kalau pakai info web.
+
+Jangan menyerah kalau bash error — baca pesannya, perbaiki, ulangi.
+JSON INPUT harus valid. Jawab pakai bahasa user (default Indonesia).
+
+[Mode Superpowers OFF — nyalakan lagi dengan /superpowers on buat dapat metodologi
+brainstorm -> approval -> plan -> TDD -> verifikasi.]"""
+
+
+def build_system_prompt(cfg):
+    """Rakit system prompt. Superpowers ON = skill library + SOP + gates."""
+    if not cfg.get("superpowers", True) or not load_skills():
+        return LEAN_SYSTEM_PROMPT
+    index = skills_index_text()
+    # NB: sengaja pakai replace, BUKAN .format() — prompt-nya penuh contoh JSON
+    # berkurung kurawal ({"name": ...}) yang bakal bikin .format() meledak.
+    return (
+        BASE_SYSTEM_PROMPT
+        .replace("{bootstrap}", bootstrap_skill_text() or "")
+        .replace("{index}", index)
+    )
+
+
+# dipertahankan buat kompatibilitas / debugging manual
+SYSTEM_PROMPT = BASE_SYSTEM_PROMPT
 
 
 def parse_response(text):
@@ -1330,6 +2149,12 @@ def parse_response(text):
 
 HELP_TEXT = """Perintah yang tersedia:
   /help                          Tampilkan bantuan ini
+  /skills                        🦸 Lihat semua skill Superpowers yang dimuat
+  /skills <nama>                 Baca isi 1 skill, contoh: /skills tdd
+  /doctor                        🩺 Cek instalasi (kalau ada yang aneh)
+  /superpowers                   Status metodologi Superpowers
+  /superpowers on|off            Nyalakan / matikan metodologi (SOP + skill)
+  /superpowers gates on|off      Gate keras (approval, TDD, verifikasi) on/off
   /intro                         Putar ulang animasi pembuka (matrix + loading)
   /connect                       Setup / cek koneksi API (template Xkiro.com)
   /connect show|test             Lihat / tes koneksi saat ini
@@ -1352,8 +2177,14 @@ HELP_TEXT = """Perintah yang tersedia:
   /clear                         Kosongkan riwayat percakapan
   /exit atau /quit               Keluar dari program
 
-Selain itu, ketik pesan biasa untuk kasih tugas ke agent (superpowers: bash,
-file, web_search, web_fetch — alur: thinking -> search -> thinking -> hasil).
+Selain itu, ketik pesan biasa untuk kasih tugas ke agent.
+
+🦸 SUPERPOWERS (aktif secara default): agent gak langsung nyemplung ngoding. Dia
+   dipaksa lewat SOP: baca skill -> brainstorm & minta persetujuan kamu -> bikin
+   rencana (todo) -> TDD (test dulu, lihat MERAH, baru kode) -> jalanin bukti
+   verifikasi -> baca ulang hasilnya -> baru boleh bilang DONE.
+   Kalau dia nyalip alur, muncul 🛑 GATE dan aksinya di-block.
+
 Awali dengan '!' buat jalankan bash langsung, contoh: !ls -la"""
 
 
@@ -1480,6 +2311,113 @@ def handle_download(rest):
     print()
 
 
+def handle_skills(rest):
+    """/skills — lihat daftar skill; /skills <nama> — baca isinya."""
+    arg = rest.strip()
+    skills = load_skills()
+    if not skills:
+        error_line("Folder skills/ kosong atau gak ketemu.")
+        system_line(f"Lokasi yang dicari: {SKILLS_DIR}")
+        system_line("Pastikan kamu clone repo-nya lengkap: git clone https://github.com/EdwardsVD/Agent.git")
+        return
+
+    if not arg:
+        w = term_width()
+        print(f"{BG_DARKGREY}{FG_CYAN}{BOLD}{f' 🦸 Superpowers — {len(skills)} skill '.ljust(w)}{RESET}")
+        for key, sk in skills.items():
+            desc = " ".join(sk["description"].split())
+            print(f"  {FG_CYAN}{BOLD}{key}{RESET}")
+            for line in _wrap_lines(desc, w - 6):
+                print(f"      {DIM}{line}{RESET}")
+        print()
+        system_line("Baca isinya: /skills <nama>   contoh: /skills tdd", FG_YELLOW)
+        system_line("Agent otomatis baca sendiri sesuai kebutuhan (progressive disclosure).", FG_GREY)
+        print()
+        return
+
+    parts = arg.split(None, 1)
+    sk = resolve_skill(parts[0])
+    if not sk:
+        error_line(f"Skill '{parts[0]}' gak ketemu.")
+        system_line("Lihat semua: /skills")
+        return
+    resource = parts[1].strip() if len(parts) > 1 else ""
+    out = tool_skill({"name": sk["key"], "resource": resource}, {})
+    w = term_width()
+    print(f"{FG_CYAN}{BOLD}{'─' * w}{RESET}")
+    print(out)
+    print(f"{FG_CYAN}{BOLD}{'─' * w}{RESET}\n")
+
+
+def handle_superpowers(rest, state):
+    """/superpowers [on|off|gates on|gates off|status]"""
+    arg = rest.strip().lower()
+    cfg = state.config
+
+    def _show():
+        n = len(load_skills())
+        if not n:
+            error_line("Folder skills/ gak ketemu — Superpowers OTOMATIS MATI.")
+            system_line(f"   Dicari di: {SKILLS_DIR}", FG_YELLOW)
+            system_line("   Fix: clone repo-nya lengkap, jangan cuma main.py —", FG_YELLOW)
+            system_line("        git clone https://github.com/EdwardsVD/Agent.git", FG_YELLOW)
+            print()
+            return
+        sp = cfg.get("superpowers", True)
+        gt = cfg.get("gates", True)
+        system_line(
+            f"🦸 Superpowers : {'ON' if sp else 'OFF'}\n"
+            f"   Gates       : {'ON' if gt else 'OFF'}  "
+            f"(approval · TDD · verifikasi · self-review)\n"
+            f"   Skill dimuat: {len(load_skills())} dari {SKILLS_DIR}",
+            FG_CYAN,
+        )
+        if sp:
+            system_line(
+                "   Agent dipaksa: skill check → brainstorm+approval → rencana → "
+                "TDD → verifikasi bukti → self-review → baru DONE.", FG_GREY)
+        else:
+            system_line("   Mode polos: agent langsung eksekusi tanpa metodologi.", FG_GREY)
+        print()
+
+    if arg in ("", "status"):
+        _show()
+        return
+    if arg in ("on", "aktif", "nyala"):
+        cfg["superpowers"] = True
+        cfg["gates"] = True
+        save_config(cfg)
+        success_line("Superpowers ON — metodologi + gate keras aktif.")
+        _show()
+        return
+    if arg in ("off", "mati"):
+        cfg["superpowers"] = False
+        save_config(cfg)
+        system_line("Superpowers OFF — agent balik jadi mode polos.", FG_YELLOW)
+        _show()
+        return
+    if arg.startswith("gates"):
+        val = arg[5:].strip()
+        if val in ("on", "aktif", "nyala"):
+            cfg["gates"] = True
+            save_config(cfg)
+            success_line("Gates ON — agent bakal di-block kalau nyalip alur.")
+        elif val in ("off", "mati"):
+            cfg["gates"] = False
+            save_config(cfg)
+            system_line("Gates OFF — SOP tetap di prompt, tapi gak dipaksa keras.", FG_YELLOW)
+        else:
+            error_line("Pakai: /superpowers gates on|off")
+            return
+        _show()
+        return
+    if arg in ("reload", "muat"):
+        n = len(load_skills(force=True))
+        success_line(f"{n} skill dimuat ulang dari {SKILLS_DIR}")
+        return
+    error_line(f"Argumen '{arg}' gak dikenal. Pakai: /superpowers on|off|gates on|gates off|reload|status")
+
+
 def handle_slash_command(cmd, state):
     """Return True kalau program harus berhenti."""
     parts = cmd.strip().split(maxsplit=1)
@@ -1497,6 +2435,18 @@ def handle_slash_command(cmd, state):
 
     if name in ("/download", "/d"):
         handle_download(rest)
+        return False
+
+    if name in ("/skills", "/skill"):
+        handle_skills(rest)
+        return False
+
+    if name in ("/doctor", "/dok"):
+        doctor()
+        return False
+
+    if name in ("/superpowers", "/sp"):
+        handle_superpowers(rest, state)
         return False
 
     if name == "/help":
@@ -1520,6 +2470,9 @@ def handle_slash_command(cmd, state):
             f"thinking     : {'ON · TAMPIL' if (state.thinking_on and state.show_thinking) else ('ON · SEMBUNYI' if state.thinking_on else 'OFF')}\n"
             f"search       : {engine}  |  SearXNG: {cfg.get('searxng_url') or '(belum di-set)'}\n"
             f"max steps    : {state.max_steps}\n"
+            f"superpowers  : {'ON' if cfg.get('superpowers', True) else 'OFF'}"
+            f"  |  gates: {'ON' if cfg.get('gates', True) else 'OFF'}"
+            f"  |  {len(load_skills())} skill dimuat\n"
             f"endpoint     : {cfg.get('base_url')}\n"
             f"api key      : {key_disp}\n"
             f"config file  : {CONFIG_PATH}"
@@ -1785,6 +2738,32 @@ def connect_wizard(cfg):
 # LOOP UTAMA AGENT: thinking -> (search) -> thinking -> hasil
 # ============================================================================
 
+def _print_workflow_receipt():
+    """Struk disiplin kerja: skill apa yang dipakai + bukti verifikasinya."""
+    wf = WORKFLOW
+    s = wf.summary()
+    if not any(s.values()):
+        return
+    w = term_width()
+    print(f"{BG_DARKGREY}{FG_CYAN}{BOLD}{' 🦸 Superpowers — catatan kerja '.ljust(w)}{RESET}")
+    if s["skills"]:
+        print(f"   {FG_CYAN}Skill dipakai :{RESET} {', '.join(s['skills'])}")
+    if s["approvals"]:
+        print(f"   {FG_CYAN}Approval      :{RESET} {s['approvals']}x dari partner manusia")
+    if s["todos"]:
+        done = sum(1 for t in wf.todos if t.get("status") == "done")
+        print(f"   {FG_CYAN}Rencana       :{RESET} {done}/{s['todos']} task beres")
+    if s["files"]:
+        print(f"   {FG_CYAN}File disentuh :{RESET} {s['files']}")
+    if wf.verifications:
+        print(f"   {FG_GREEN}Bukti verifikasi ({len(wf.verifications)}):{RESET}")
+        for v in wf.verifications[-4:]:
+            print(f"     {FG_GREEN}✔{RESET} {DIM}{v['cmd']}{RESET}")
+    elif s["files"]:
+        print(f"   {FG_YELLOW}⚠ Belum ada bukti verifikasi yang kejalan.{RESET}")
+    print()
+
+
 def _print_download_hint():
     if not LAST_TASK_FILES:
         return
@@ -1805,6 +2784,7 @@ def _print_download_hint():
 def run_task(task, state):
     global LAST_TASK_FILES
     LAST_TASK_FILES = []
+    WORKFLOW.reset()
     state.messages.append({"role": "user", "content": task})
     state.step_count = 0
 
@@ -1827,7 +2807,7 @@ def run_task(task, state):
                 reply = send_chat(
                     state.config,
                     state.model["id"],
-                    [{"role": "system", "content": SYSTEM_PROMPT}] + state.messages,
+                    [{"role": "system", "content": build_system_prompt(state.config)}] + state.messages,
                     state.effort,
                     state.thinking_on,
                     on_stream=on_stream,
@@ -1867,7 +2847,16 @@ def run_task(task, state):
                 )
 
             if parsed["kind"] == "done":
+                gate = pre_done_gate(WORKFLOW, state.config)
+                if gate:
+                    gate_line(gate)
+                    state.messages.append({
+                        "role": "user",
+                        "content": f"OBSERVATION: 🛑 {gate}",
+                    })
+                    continue
                 done_line(parsed["summary"])
+                _print_workflow_receipt()
                 _print_download_hint()
                 return
 
@@ -1879,17 +2868,33 @@ def run_task(task, state):
                 error_line(parsed["error"])
             else:
                 tool_name, args = parsed["tool"], parsed["args"]
+
+                # --- GATE: disiplin Superpowers sebelum aksi dieksekusi ------
+                gate = pre_action_gate(tool_name, args, WORKFLOW, state.config)
+                if gate:
+                    action_line(tool_name, args)
+                    gate_line(gate)
+                    state.messages.append({
+                        "role": "user",
+                        "content": f"OBSERVATION: 🛑 {gate}",
+                    })
+                    continue
+
                 action_line(tool_name, args)
                 if tool_name not in TOOLS:
-                    observation = f"OBSERVATION: [Error] Tool '{tool_name}' tidak dikenal."
+                    result = f"[Error] Tool '{tool_name}' tidak dikenal."
+                    observation = f"OBSERVATION: {result}"
                 else:
                     try:
                         result = TOOLS[tool_name](args, state.config)
                     except Exception as e:
                         result = f"[Error {tool_name}: {e}]"
+                    workflow_record(tool_name, args, result, WORKFLOW, state.step_count)
                     observation = f"OBSERVATION: {result}"
                 if tool_name == "web_search":
                     _print_search_results(result)
+                elif tool_name in ("todo_write", "ask_user"):
+                    pass  # sudah punya panel sendiri
                 else:
                     observation_line(observation, tool_name=tool_name)
 
@@ -1903,12 +2908,135 @@ def run_task(task, state):
             state.messages.pop()
 
 
+def _find_real_agent_dir(start):
+    """Cari folder Agent asli (yang ada main.py-nya) di sekitar `start`.
+
+    Kasus paling sering di Termux: user kejebak di ~/Agent/Agent yang KOSONG
+    gara-gara clone gagal / keinterupsi, terus bingung kenapa main.py gak ada.
+    """
+    start = os.path.abspath(start)
+    cands = []
+    # naik ke atas: ~/Agent/Agent -> ~/Agent -> ~
+    cur = start
+    for _ in range(4):
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cands.append(parent)
+        cur = parent
+    # turun ke bawah 1 level
+    try:
+        for name in sorted(os.listdir(start)):
+            p = os.path.join(start, name)
+            if os.path.isdir(p):
+                cands.append(p)
+    except OSError:
+        pass
+    for c in cands:
+        if os.path.isfile(os.path.join(c, "main.py")) and os.path.isdir(
+            os.path.join(c, "skills")
+        ):
+            return c
+    return None
+
+
+def doctor(verbose=True):
+    """Cek instalasi sehat apa enggak. Return True kalau aman.
+
+    Ini yang nolongin user Termux yang kejebak 'Agent/Agent kosong'.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    problems = []
+    n_skills = len(load_skills())
+
+    if not os.path.isdir(SKILLS_DIR):
+        problems.append(
+            "Folder skills/ GAK ADA — Superpowers mati, agent jalan mode polos."
+        )
+    elif n_skills == 0:
+        problems.append("Folder skills/ ada tapi KOSONG — gak ada skill yang kemuat.")
+
+    try:
+        import requests  # noqa: F401
+    except ImportError:
+        problems.append("Modul 'requests' belum keinstall — jalanin: pip install -r requirements.txt")
+
+    if sys.version_info < (3, 7):
+        problems.append(
+            f"Python kamu {sys.version_info.major}.{sys.version_info.minor} — butuh minimal 3.7."
+        )
+
+    if not verbose:
+        return not problems
+
+    w = term_width()
+    print(f"{FG_CYAN}{BOLD}{'═' * w}{RESET}")
+    print(f"{FG_CYAN}{BOLD}🩺 Agent Doctor — cek instalasi{RESET}")
+    print(f"{FG_CYAN}{BOLD}{'═' * w}{RESET}")
+    print(f"  Versi Agent   : v{VERSION}")
+    print(f"  Python        : {sys.version.split()[0]}  ({sys.executable})")
+    print(f"  Lokasi main.py: {os.path.join(here, 'main.py')}")
+    print(f"  Folder kerja  : {os.getcwd()}")
+    print(f"  Folder skills : {SKILLS_DIR}")
+    print(f"  Skill kemuat  : {n_skills}")
+    print(f"  Lebar layar   : {w} kolom{'  (mode HP/sempit)' if is_narrow() else ''}")
+    print()
+
+    if problems:
+        for p in problems:
+            error_line(p)
+        print()
+        system_line("Cara benerin (copy-paste aja):", FG_YELLOW)
+        print(f"{FG_YELLOW}  cd ~{RESET}")
+        print(f"{FG_YELLOW}  rm -rf Agent{RESET}")
+        print(f"{FG_YELLOW}  git clone https://github.com/EdwardsVD/Agent.git{RESET}")
+        print(f"{FG_YELLOW}  cd Agent{RESET}")
+        print(f"{FG_YELLOW}  pip install -r requirements.txt{RESET}")
+        print(f"{FG_YELLOW}  python main.py{RESET}")
+        print()
+        return False
+
+    success_line("Semua aman. Superpowers siap dipakai.")
+    print()
+    return True
+
+
+def _bootstrap_check():
+    """Dipanggil paling awal. Kalau user kejebak folder kosong, kasih tau
+    JALAN KELUARNYA — bukan cuma error Python yang bikin bingung."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if os.path.isdir(os.path.join(here, "skills")):
+        return
+    real = _find_real_agent_dir(os.getcwd())
+    if real and os.path.abspath(real) != os.path.abspath(here):
+        print()
+        error_line("Kayaknya kamu jalanin dari folder yang salah.")
+        system_line(f"  Folder Agent yang bener ada di: {real}", FG_YELLOW)
+        system_line("  Coba jalanin ini:", FG_YELLOW)
+        print(f"{FG_GREEN}{BOLD}    cd {real} && python main.py{RESET}")
+        print()
+
+
 def main():
-    if "--version" in sys.argv:
+    argv = sys.argv[1:]
+    if "--version" in argv or "-V" in argv:
         print(f"Agent CLI v{VERSION}")
+        return
+    if "--help" in argv or "-h" in argv:
+        print(f"Agent CLI v{VERSION} — coding agent dengan Superpowers\n")
+        print("Cara pakai:  python main.py [opsi]\n")
+        print("Opsi:")
+        print("  --no-anim     Lewati animasi pembuka (lebih cepat di HP)")
+        print("  --doctor      Cek instalasi sehat apa enggak, lalu keluar")
+        print("  --version     Tampilkan versi")
+        print("  --help        Tampilkan bantuan ini")
+        print("\nDi dalam program, ketik /help buat daftar perintah lengkap.")
         return
     if os.name == "nt":
         os.system("")  # aktifkan ANSI di cmd Windows
+    if "--doctor" in argv:
+        sys.exit(0 if doctor() else 1)
+    _bootstrap_check()
     state = State()
     intro_animation()
     banner()
