@@ -47,7 +47,7 @@ Gantinya:
 ### Workflow gate yang dipaksa di level kode
 
 Harness ini **menegakkan** sebagian skill lewat kode, bukan cuma imbauan. Kalau
-kamu nyalip alur, aksimu **ditolak** dan kamu dapat pesan `🛑 GATE [...]`:
+kamu nyalip alur, aksimu **ditolak** dan kamu dapat pesan `[GATE] GATE [...]`:
 
 | Gate | Nyala kalau |
 |---|---|
