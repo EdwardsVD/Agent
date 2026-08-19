@@ -59,13 +59,103 @@ import urllib.parse
 from html import unescape as _html_unescape
 from html.parser import HTMLParser
 
-import requests
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+    import urllib.request as _urllib_req
+    import urllib.error as _urllib_err
+    import urllib.parse as _urllib_parse
+    import ssl as _ssl
+    import io as _io
+
+    class _RequestsResponse:
+        def __init__(self, status_code, content, headers=None):
+            self.status_code = status_code
+            self.content = content
+            self.headers = headers or {}
+
+        @property
+        def text(self):
+            return self.content.decode("utf-8", errors="replace")
+
+        def json(self):
+            return json.loads(self.text)
+
+        def iter_lines(self, decode_unicode=False):
+            for line in self.text.splitlines():
+                yield line
+
+        def iter_content(self, chunk_size=4096):
+            bio = _io.BytesIO(self.content)
+            while True:
+                chunk = bio.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    class _RequestsShim:
+        class RequestException(Exception):
+            pass
+
+        @staticmethod
+        def get(url, headers=None, params=None, timeout=30, stream=False):
+            if params:
+                query_string = _urllib_parse.urlencode(params)
+                url = f"{url}?{query_string}" if "?" not in url else f"{url}&{query_string}"
+            req = _urllib_req.Request(url, headers=headers or {})
+            ctx = _ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ssl.CERT_NONE
+            try:
+                with _urllib_req.urlopen(req, timeout=timeout, context=ctx) as resp:
+                    return _RequestsResponse(resp.status, resp.read(), dict(resp.headers))
+            except _urllib_err.HTTPError as e:
+                return _RequestsResponse(e.code, e.read(), dict(e.headers))
+            except Exception as e:
+                raise _RequestsShim.RequestException(str(e))
+
+        @staticmethod
+        def post(url, headers=None, json=None, data=None, timeout=30, stream=False):
+            headers = dict(headers or {})
+            body_bytes = b""
+            if json is not None:
+                headers["Content-Type"] = "application/json"
+                body_bytes = json.dumps(json).encode("utf-8")
+            elif data is not None:
+                if isinstance(data, str):
+                    body_bytes = data.encode("utf-8")
+                elif isinstance(data, dict):
+                    body_bytes = _urllib_parse.urlencode(data).encode("utf-8")
+                else:
+                    body_bytes = data
+            req = _urllib_req.Request(url, data=body_bytes, headers=headers, method="POST")
+            ctx = _ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ssl.CERT_NONE
+            t = timeout if isinstance(timeout, (int, float)) else timeout[1] if isinstance(timeout, tuple) else 30
+            try:
+                with _urllib_req.urlopen(req, timeout=t, context=ctx) as resp:
+                    return _RequestsResponse(resp.status, resp.read(), dict(resp.headers))
+            except _urllib_err.HTTPError as e:
+                return _RequestsResponse(e.code, e.read(), dict(e.headers))
+            except Exception as e:
+                raise _RequestsShim.RequestException(str(e))
+
+    requests = _RequestsShim()
 
 # ============================================================================
 # KONSTANTA & KONFIGURASI
 # ============================================================================
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 
 CONFIG_DIR = os.path.expanduser("~/.opencode_clone")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "connect.json")
@@ -96,6 +186,115 @@ DEFAULT_CONFIG = {
     "gates": True,                        # gate keras: approval, TDD, verifikasi
 }
 
+
+
+# ============================================================================
+# TERMUX, CLIPBOARD & SISTEM UTILITIES
+# ============================================================================
+
+def is_termux():
+    return bool(os.environ.get("TERMUX_VERSION") or os.path.exists("/data/data/com.termux"))
+
+
+def get_phone_download_dir():
+    candidates = [
+        "/sdcard/Download",
+        os.path.expanduser("~/storage/shared/Download"),
+        os.path.expanduser("~/storage/downloads"),
+        os.path.expanduser("~/Downloads"),
+    ]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return None
+
+
+def termux_notify(title, message):
+    if is_termux() and shutil.which("termux-notification"):
+        try:
+            subprocess.run(
+                ["termux-notification", "--title", str(title), "--content", str(message)],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+
+def termux_vibrate(duration_ms=200):
+    if is_termux() and shutil.which("termux-vibrate"):
+        try:
+            subprocess.run(
+                ["termux-vibrate", "-d", str(duration_ms)],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+
+def clipboard_set(text):
+    """Salin teks ke clipboard sistem (Termux, Linux, macOS, Windows)."""
+    if is_termux() and shutil.which("termux-clipboard-set"):
+        try:
+            p = subprocess.run(["termux-clipboard-set"], input=text, text=True, capture_output=True, timeout=5)
+            return p.returncode == 0
+        except Exception:
+            pass
+    if shutil.which("pbcopy"):
+        try:
+            p = subprocess.run(["pbcopy"], input=text, text=True, capture_output=True, timeout=5)
+            return p.returncode == 0
+        except Exception:
+            pass
+    if shutil.which("wl-copy"):
+        try:
+            p = subprocess.run(["wl-copy"], input=text, text=True, capture_output=True, timeout=5)
+            return p.returncode == 0
+        except Exception:
+            pass
+    if shutil.which("xclip"):
+        try:
+            p = subprocess.run(["xclip", "-selection", "clipboard"], input=text, text=True, capture_output=True, timeout=5)
+            return p.returncode == 0
+        except Exception:
+            pass
+    if shutil.which("clip"):
+        try:
+            p = subprocess.run(["clip"], input=text, text=True, capture_output=True, timeout=5)
+            return p.returncode == 0
+        except Exception:
+            pass
+    return False
+
+
+def clipboard_get():
+    """Ambil teks dari clipboard sistem."""
+    if is_termux() and shutil.which("termux-clipboard-get"):
+        try:
+            p = subprocess.run(["termux-clipboard-get"], capture_output=True, text=True, timeout=5)
+            return p.stdout
+        except Exception:
+            pass
+    if shutil.which("pbpaste"):
+        try:
+            p = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=5)
+            return p.stdout
+        except Exception:
+            pass
+    if shutil.which("wl-paste"):
+        try:
+            p = subprocess.run(["wl-paste"], capture_output=True, text=True, timeout=5)
+            return p.stdout
+        except Exception:
+            pass
+    if shutil.which("xclip"):
+        try:
+            p = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True, timeout=5)
+            return p.stdout
+        except Exception:
+            pass
+    return ""
 
 def ensure_config_dir():
     os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -585,6 +784,26 @@ EFFORT_ALIASES = {
 EFFORT_ORDER = ["none", "low", "medium", "high", "xhigh", "max"]
 
 MODEL_CATALOG = [
+    {"key": "sonnet37", "label": "Claude 3.7 Sonnet", "id": "anthropic/claude-3.7-sonnet",
+     "vendor": "Anthropic", "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "high"},
+    {"key": "sonnet35", "label": "Claude 3.5 Sonnet", "id": "anthropic/claude-3.5-sonnet",
+     "vendor": "Anthropic", "efforts": ["low", "medium", "high", "max"], "default_effort": "high"},
+    {"key": "gpt4o", "label": "GPT-4o", "id": "openai/gpt-4o",
+     "vendor": "OpenAI", "efforts": ["none", "low", "medium", "high", "max"], "default_effort": "medium"},
+    {"key": "gpt4omini", "label": "GPT-4o Mini", "id": "openai/gpt-4o-mini",
+     "vendor": "OpenAI", "efforts": ["none", "low", "medium", "high"], "default_effort": "low"},
+    {"key": "o3mini", "label": "o3-mini", "id": "openai/o3-mini",
+     "vendor": "OpenAI", "efforts": ["low", "medium", "high"], "default_effort": "high"},
+    {"key": "deepseekv3", "label": "DeepSeek V3", "id": "deepseek/deepseek-chat",
+     "vendor": "DeepSeek", "efforts": ["none", "low", "medium", "high"], "default_effort": "medium"},
+    {"key": "deepseekr1", "label": "DeepSeek R1", "id": "deepseek/deepseek-reasoner",
+     "vendor": "DeepSeek", "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "max"},
+    {"key": "qwencoder", "label": "Qwen 2.5 Coder 32B", "id": "qwen/qwen-2.5-coder-32b-instruct",
+     "vendor": "Alibaba", "efforts": ["none", "low", "medium", "high"], "default_effort": "medium"},
+    {"key": "gemini2flash", "label": "Gemini 2.0 Flash", "id": "google/gemini-2.0-flash",
+     "vendor": "Google", "efforts": ["none", "low", "medium", "high"], "default_effort": "low"},
+    {"key": "llama33", "label": "Llama 3.3 70B", "id": "meta-llama/llama-3.3-70b-instruct",
+     "vendor": "Meta", "efforts": ["none", "low", "medium", "high"], "default_effort": "medium"},
     {"key": "fable5", "label": "Claude Fable 5", "id": "anthropic/claude-fable-5",
      "vendor": "Anthropic", "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "high"},
     {"key": "opus5", "label": "Claude Opus 5", "id": "anthropic/claude-opus-5",
@@ -626,6 +845,15 @@ def find_model(query):
     for m in MODEL_CATALOG:
         if q in m["key"].lower() or q in m["label"].lower() or q in m["id"].lower():
             return m
+    if "/" in query or "-" in query or "." in query:
+        return {
+            "key": re.sub(r"[^a-zA-Z0-9]", "", query.split("/")[-1].lower())[:12] or "custom",
+            "label": f"Custom ({query})",
+            "id": query,
+            "vendor": "Custom / Gateway",
+            "efforts": ["none", "low", "medium", "high", "max"],
+            "default_effort": "medium",
+        }
     return None
 
 
@@ -1357,6 +1585,7 @@ SKILLS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills")
 
 # alias biar model gampang manggil skill walau namanya beda dikit
 SKILL_ALIASES = {
+    # Core superpowers
     "brainstorm": "brainstorming",
     "design": "brainstorming",
     "spec": "brainstorming",
@@ -1383,6 +1612,68 @@ SKILL_ALIASES = {
     "superpowers": "using-superpowers",
     "bootstrap": "using-superpowers",
     "write-skill": "writing-skills",
+    # Extended code generation superpowers
+    "scaffold": "prompt-to-project",
+    "project": "prompt-to-project",
+    "init": "prompt-to-project",
+    "generator": "prompt-to-project",
+    "generate-project": "prompt-to-project",
+    "p2p": "prompt-to-project",
+    "fullstack": "fullstack-code-generator",
+    "webapp": "fullstack-code-generator",
+    "web-app": "fullstack-code-generator",
+    "full-stack": "fullstack-code-generator",
+    "api": "api-design-and-scaffolding",
+    "rest-api": "api-design-and-scaffolding",
+    "graphql": "api-design-and-scaffolding",
+    "openapi": "api-design-and-scaffolding",
+    "swagger": "api-design-and-scaffolding",
+    "endpoint": "api-design-and-scaffolding",
+    "database": "database-architect",
+    "db": "database-architect",
+    "schema": "database-architect",
+    "sql": "database-architect",
+    "migration": "database-architect",
+    "orm": "database-architect",
+    "sqlite": "database-architect",
+    "postgres": "database-architect",
+    "refactor": "code-refactoring-and-clean-code",
+    "clean-code": "code-refactoring-and-clean-code",
+    "clean": "code-refactoring-and-clean-code",
+    "optimize": "code-refactoring-and-clean-code",
+    "solid": "code-refactoring-and-clean-code",
+    "frontend": "frontend-ui-builder",
+    "ui": "frontend-ui-builder",
+    "ux": "frontend-ui-builder",
+    "tailwind": "frontend-ui-builder",
+    "react": "frontend-ui-builder",
+    "html": "frontend-ui-builder",
+    "landing-page": "frontend-ui-builder",
+    "css": "frontend-ui-builder",
+    "security": "security-and-vulnerability-hardening",
+    "hardening": "security-and-vulnerability-hardening",
+    "audit": "security-and-vulnerability-hardening",
+    "owasp": "security-and-vulnerability-hardening",
+    "auth": "security-and-vulnerability-hardening",
+    "sanitize": "security-and-vulnerability-hardening",
+    "automation": "scripting-and-automation",
+    "script": "scripting-and-automation",
+    "scraper": "scripting-and-automation",
+    "scrape": "scripting-and-automation",
+    "crawl": "scripting-and-automation",
+    "cron": "scripting-and-automation",
+    "cli": "scripting-and-automation",
+    "bot": "bot-and-integrations-builder",
+    "telegram-bot": "bot-and-integrations-builder",
+    "discord-bot": "bot-and-integrations-builder",
+    "webhook": "bot-and-integrations-builder",
+    "chat-bot": "bot-and-integrations-builder",
+    "reverse": "reverse-engineering-and-analysis",
+    "analyze": "reverse-engineering-and-analysis",
+    "analysis": "reverse-engineering-and-analysis",
+    "explain-code": "reverse-engineering-and-analysis",
+    "architecture": "reverse-engineering-and-analysis",
+    "mermaid": "reverse-engineering-and-analysis",
 }
 
 _SKILL_CACHE = {"loaded": False, "skills": {}}
@@ -2149,17 +2440,30 @@ def parse_response(text):
 
 HELP_TEXT = """Perintah yang tersedia:
   /help                          Tampilkan bantuan ini
-  /skills                        🦸 Lihat semua skill Superpowers yang dimuat
-  /skills <nama>                 Baca isi 1 skill, contoh: /skills tdd
-  /doctor                        🩺 Cek instalasi (kalau ada yang aneh)
-  /superpowers                   Status metodologi Superpowers
+  /skills                        🦸 Lihat 24 skill Superpowers yang dimuat
+  /skills <nama>                 Baca isi 1 skill, contoh: /skills fullstack
+  /generate <prompt>             ⚡ Mode cepat generate kode / proyek
+  /template [nama]               📦 Buat template proyek instan (fastapi, flask, termux-tool, dll)
+  /prompt [no]                   ✨ Presets prompt panduan instan pembuatan kode
+  /refactor <file>               🧹 Refactor kode dengan prinsip Clean Code & SOLID
+  /testgen <file>                🧪 Generate unit test komprehensif untuk file
+  /explain <file>                📖 Analisis & jelaskan arsitektur serta alur file
+  /fix <file>                    🔧 Diagnosis error dan perbaiki bug otomatis
+  /export atau /zip [nama]       💾 Ekspor seluruh workspace ke zip (auto salin ke HP)
+  /copy <file>                   📋 Salin isi file workspace ke clipboard sistem / Termux
+  /paste [file_tujuan]           📥 Tempel isi clipboard ke file workspace
+  /diff [file]                   📄 Tampilkan perbedaan perubahan kode (git diff)
+  /snippet [list|save|show|del]  📚 Manajemen koleksi snippet kode
+  /stats                         📊 Statistik sesi, token, workspace, & platform
+  /doctor                        🩺 Cek instalasi sistem & kesehatan Termux
+  /superpowers                   Status metodologi Superpowers (24 skill & gates)
   /superpowers on|off            Nyalakan / matikan metodologi (SOP + skill)
   /superpowers gates on|off      Gate keras (approval, TDD, verifikasi) on/off
   /intro                         Putar ulang animasi pembuka (matrix + loading)
   /connect                       Setup / cek koneksi API (template Xkiro.com)
   /connect show|test             Lihat / tes koneksi saat ini
   /models                        Lihat semua model yang tersedia
-  /model <no|nama>               Ganti model aktif, contoh: /model kimik3
+  /model <no|nama>               Ganti model aktif, contoh: /model deepseekr1
   /think on|off                  Aktifkan / matikan reasoning (thinking) model
   /think show|hide|toggle        Buka / tutup tampilan blok thinking
   /effort <level>                Level upaya: none,low,medium,high,xhigh,max
@@ -2177,13 +2481,12 @@ HELP_TEXT = """Perintah yang tersedia:
   /clear                         Kosongkan riwayat percakapan
   /exit atau /quit               Keluar dari program
 
-Selain itu, ketik pesan biasa untuk kasih tugas ke agent.
+Selain itu, ketik pesan bebas untuk meminta AI membuatkan program apa saja!
 
-🦸 SUPERPOWERS (aktif secara default): agent gak langsung nyemplung ngoding. Dia
-   dipaksa lewat SOP: baca skill -> brainstorm & minta persetujuan kamu -> bikin
-   rencana (todo) -> TDD (test dulu, lihat MERAH, baru kode) -> jalanin bukti
-   verifikasi -> baca ulang hasilnya -> baru boleh bilang DONE.
-   Kalau dia nyalip alur, muncul 🛑 GATE dan aksinya di-block.
+🦸 SUPERPOWERS (24 SKILLS & GATES): Agent dipersenjatai SOP otomatis:
+   brainstorm & approval -> rencana (todo) -> TDD (test dulu) -> verifikasi -> self-review.
+   Dilengkapi skill: prompt-to-project, fullstack-code-generator, api-design, database-architect,
+   code-refactoring, frontend-ui, security-hardening, scripting-automation, bot-builder, dll.
 
 Awali dengan '!' buat jalankan bash langsung, contoh: !ls -la"""
 
@@ -2226,6 +2529,557 @@ def _print_search_results(text):
             print(f"{DIM}{FG_GREY}    {line}{RESET}")
     print()
 
+
+
+# ============================================================================
+# BOILERPLATES & PROMPT PRESETS (v3.2.0 Superpowers Code Generation)
+# ============================================================================
+
+BUILTIN_TEMPLATES = {
+    "fastapi": {
+        "name": "FastAPI REST API Service",
+        "description": "FastAPI modern backend with Pydantic validation, CORS, and healthcheck",
+        "files": {
+            "main.py": """from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Optional
+import uvicorn
+
+app = FastAPI(
+    title="Service API",
+    description="High-performance REST API built with FastAPI",
+    version="1.0.0"
+)
+
+class Item(BaseModel):
+    id: Optional[int] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    price: float = Field(..., gt=0)
+
+_db: dict[int, Item] = {}
+_counter = 1
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "items_count": len(_db)}
+
+@app.get("/api/v1/items", response_model=List[Item])
+def list_items():
+    return list(_db.values())
+
+@app.post("/api/v1/items", response_model=Item, status_code=201)
+def create_item(item: Item):
+    global _counter
+    item.id = _counter
+    _db[_counter] = item
+    _counter += 1
+    return item
+
+@app.get("/api/v1/items/{item_id}", response_model=Item)
+def get_item(item_id: int):
+    if item_id not in _db:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return _db[item_id]
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+""",
+            "test_main.py": """import unittest
+from main import app, _db, Item
+
+class TestFastAPI(unittest.TestCase):
+    def setUp(self):
+        _db.clear()
+
+    def test_item_model(self):
+        item = Item(id=1, name="Laptop", price=999.0)
+        self.assertEqual(item.name, "Laptop")
+        self.assertEqual(item.price, 999.0)
+
+    def test_health_check(self):
+        from main import health
+        res = health()
+        self.assertEqual(res["status"], "ok")
+
+if __name__ == "__main__":
+    unittest.main()
+""",
+            "requirements.txt": "fastapi>=0.100.0\nuvicorn>=0.22.0\npydantic>=2.0.0\n",
+            "README.md": """# FastAPI REST API Service
+
+## Setup & Run
+```bash
+pip install -r requirements.txt
+python3 main.py
+# Buka Swagger UI: http://localhost:8000/docs
+```
+""",
+        },
+    },
+    "flask": {
+        "name": "Flask Lightweight REST API",
+        "description": "Flask REST microservice with JSON responses and error handling",
+        "files": {
+            "app.py": """from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+items = []
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "count": len(items)})
+
+@app.route("/api/items", methods=["GET"])
+def get_items():
+    return jsonify({"success": True, "data": items})
+
+@app.route("/api/items", methods=["POST"])
+def add_item():
+    data = request.get_json() or {}
+    name = data.get("name")
+    if not name:
+        return jsonify({"success": False, "error": "Name is required"}), 400
+    item = {"id": len(items) + 1, "name": name}
+    items.append(item)
+    return jsonify({"success": True, "data": item}), 201
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+""",
+            "test_app.py": """import unittest
+from app import app, items
+
+class TestFlask(unittest.TestCase):
+    def setUp(self):
+        items.clear()
+        self.client = app.test_client()
+
+    def test_health(self):
+        res = self.client.get("/health")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json["status"], "ok")
+
+    def test_add_item(self):
+        res = self.client.post("/api/items", json={"name": "Test Item"})
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(res.json["success"])
+
+if __name__ == "__main__":
+    unittest.main()
+""",
+            "requirements.txt": "Flask>=2.3.0\n",
+        },
+    },
+    "termux-tool": {
+        "name": "Termux Mobile CLI Utility",
+        "description": "Android Termux automation tool with battery, storage, and notification hooks",
+        "files": {
+            "tool.py": """#!/usr/bin/env python3
+import sys
+import os
+import shutil
+import subprocess
+import argparse
+
+def get_battery():
+    if shutil.which("termux-battery-status"):
+        res = subprocess.run(["termux-battery-status"], capture_output=True, text=True)
+        return res.stdout.strip()
+    return "termux-api not installed or not in Termux"
+
+def notify(msg):
+    if shutil.which("termux-notification"):
+        subprocess.run(["termux-notification", "--title", "Termux Agent", "--content", msg])
+        print(f"📱 Notifikasi dikirim: {msg}")
+    else:
+        print(f"💬 {msg}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Termux Power CLI Utility")
+    parser.add_argument("--battery", action="store_true", help="Cek status baterai HP")
+    parser.add_argument("--notify", type=str, help="Kirim notifikasi Android")
+    parser.add_argument("--info", action="store_true", help="Cek info sistem Termux")
+    args = parser.parse_args()
+
+    if args.battery:
+        print("🔋 Status Baterai:", get_battery())
+    elif args.notify:
+        notify(args.notify)
+    elif args.info:
+        print("📱 Python:", sys.version)
+        print("📁 CWD:", os.getcwd())
+        print("💾 Termux:", "Yes" if "TERMUX_VERSION" in os.environ else "No")
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()
+""",
+            "test_tool.py": """import unittest
+from tool import get_battery
+
+class TestTool(unittest.TestCase):
+    def test_battery_callable(self):
+        res = get_battery()
+        self.assertIsInstance(res, str)
+
+if __name__ == "__main__":
+    unittest.main()
+""",
+            "README.md": """# Termux Power Tool
+
+Jalankan di Termux:
+```bash
+python3 tool.py --info
+python3 tool.py --battery
+python3 tool.py --notify "Hello dari Agent!"
+```
+""",
+        },
+    },
+    "sqlite-crud": {
+        "name": "SQLite Database CRUD Engine",
+        "description": "Modular SQLite database manager with parameterized queries, models, and migrations",
+        "files": {
+            "db.py": """import sqlite3
+import os
+from typing import List, Dict, Any, Optional
+
+class Database:
+    def __init__(self, db_path: str = "app.db"):
+        self.db_path = db_path
+        self._init_db()
+
+    def _get_conn(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self):
+        with self._get_conn() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, content TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            conn.commit()
+
+    def create_note(self, title: str, content: str = "") -> int:
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO notes (title, content) VALUES (?, ?)", (title, content))
+            conn.commit()
+            return cur.lastrowid
+
+    def get_notes(self) -> List[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM notes ORDER BY id DESC")
+            return [dict(row) for row in cur.fetchall()]
+
+    def get_note(self, note_id: int) -> Optional[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def delete_note(self, note_id: int) -> bool:
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+            conn.commit()
+            return cur.rowcount > 0
+""",
+            "test_db.py": """import unittest
+import os
+from db import Database
+
+class TestDatabase(unittest.TestCase):
+    def setUp(self):
+        self.test_db = "test_temp.db"
+        self.db = Database(self.test_db)
+
+    def tearDown(self):
+        if os.path.exists(self.test_db):
+            os.remove(self.test_db)
+
+    def test_crud(self):
+        nid = self.db.create_note("Belajar Agent", "Superpowers v3.2.0")
+        self.assertGreater(nid, 0)
+        note = self.db.get_note(nid)
+        self.assertEqual(note["title"], "Belajar Agent")
+        notes = self.db.get_notes()
+        self.assertEqual(len(notes), 1)
+        deleted = self.db.delete_note(nid)
+        self.assertTrue(deleted)
+        self.assertIsNone(self.db.get_note(nid))
+
+if __name__ == "__main__":
+    unittest.main()
+""",
+        },
+    },
+    "react-tailwind": {
+        "name": "Modern Responsive HTML5 + Tailwind SPA",
+        "description": "Mobile-first single page app with Tailwind CSS CDN, dark mode, and interactive components",
+        "files": {
+            "index.html": """<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modern Web App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: { brand: '#38bdf8' } } }
+    }
+  </script>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col font-sans">
+  <header class="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <span class="text-2xl">⚡</span>
+      <h1 class="font-bold text-xl tracking-tight text-brand">Agent App</h1>
+    </div>
+    <button id="themeToggle" class="px-3 py-1 text-xs font-semibold rounded-lg bg-zinc-800 hover:bg-zinc-700 transition">Toggle Theme</button>
+  </header>
+
+  <main class="flex-1 max-w-4xl w-full mx-auto p-6 space-y-6">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+      <h2 class="text-2xl font-bold mb-2">Selamat Datang di Superpowers App</h2>
+      <p class="text-zinc-400">Aplikasi modern, responsif, dan siap dikembangkan.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="cardsGrid">
+      <!-- Card items -->
+    </div>
+  </main>
+
+  <footer class="border-t border-zinc-800 px-6 py-4 text-center text-xs text-zinc-500">
+    Generated with Agent CLI Superpowers
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
+""",
+            "app.js": """document.addEventListener("DOMContentLoaded", () => {
+  const cards = [
+    { title: "⚡ Kecepatan Tinggi", desc: "Aplikasi ringan tanpa build step berat." },
+    { title: "📱 Termux Ready", desc: "Dukungan layar HP dan mobile development." },
+    { title: "🔒 Aman & Bersih", desc: "Arsitektur bersih dan teruji dengan TDD." }
+  ];
+
+  const grid = document.getElementById("cardsGrid");
+  if (grid) {
+    grid.innerHTML = cards.map(c => `
+      <div class="bg-zinc-900 border border-zinc-800 p-5 rounded-xl hover:border-brand transition">
+        <h3 class="font-semibold text-lg text-white mb-1">${c.title}</h3>
+        <p class="text-sm text-zinc-400">${c.desc}</p>
+      </div>
+    `).join("");
+  }
+
+  const toggle = document.getElementById("themeToggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      document.documentElement.classList.toggle("dark");
+    });
+  }
+});
+""",
+            "README.md": """# Modern Web App
+
+Buka `index.html` langsung di browser, atau jalankan local server:
+```bash
+python3 -m http.server 8080
+```
+""",
+        },
+    },
+    "web-scraper": {
+        "name": "Web Scraper & Data Extractor",
+        "description": "Python web scraper with custom User-Agent, error handling, and JSON/CSV export",
+        "files": {
+            "scraper.py": """import json
+import csv
+import requests
+
+class SimpleHTMLScraper:
+    def __init__(self, user_agent=None):
+        self.headers = {"User-Agent": user_agent or "Mozilla/5.0"}
+
+    def fetch(self, url):
+        resp = requests.get(url, headers=self.headers, timeout=15)
+        resp.raise_for_status()
+        return resp.text
+
+    def save_json(self, data, path="output.json"):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        print(f"✔ Data saved to {path}")
+
+if __name__ == "__main__":
+    print("Scraper ready.")
+""",
+            "test_scraper.py": """import unittest
+from scraper import SimpleHTMLScraper
+
+class TestScraper(unittest.TestCase):
+    def test_headers(self):
+        s = SimpleHTMLScraper("TestAgent")
+        self.assertEqual(s.headers["User-Agent"], "TestAgent")
+
+if __name__ == "__main__":
+    unittest.main()
+""",
+            "requirements.txt": "requests>=2.31.0\n",
+        },
+    },
+    "telegram-bot": {
+        "name": "Telegram Bot Template",
+        "description": "Python Telegram Bot template with command handlers and safe error recovery",
+        "files": {
+            "bot.py": """import os
+import time
+import requests
+
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+API_BASE = f"https://api.telegram.org/bot{TOKEN}"
+
+def api_call(method, payload=None):
+    try:
+        r = requests.post(f"{API_BASE}/{method}", json=payload or {}, timeout=30)
+        return r.json()
+    except Exception as e:
+        print(f"API Error: {e}")
+        return {"ok": False, "error": str(e)}
+
+def get_me():
+    return api_call("getMe")
+
+def send_message(chat_id, text):
+    return api_call("sendMessage", {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
+
+if __name__ == "__main__":
+    print("Telegram Bot Runner...")
+    print("Set environment variable TELEGRAM_BOT_TOKEN before running polling.")
+""",
+            "test_bot.py": """import unittest
+from bot import TOKEN, API_BASE
+
+class TestBot(unittest.TestCase):
+    def test_api_base_formatted(self):
+        self.assertTrue(API_BASE.startswith("https://api.telegram.org/bot"))
+
+if __name__ == "__main__":
+    unittest.main()
+""",
+            "requirements.txt": "requests>=2.31.0\n",
+        },
+    },
+    "pytest-suite": {
+        "name": "Python Package + Test Suite",
+        "description": "Modular Python package structure with comprehensive unit tests",
+        "files": {
+            "src/__init__.py": '"""Core package."""\n__version__ = "1.0.0"\n',
+            "src/calculator.py": """def add(a: float, b: float) -> float:\n    return a + b\n\ndef subtract(a: float, b: float) -> float:\n    return a - b\n\ndef multiply(a: float, b: float) -> float:\n    return a * b\n\ndef divide(a: float, b: float) -> float:\n    if b == 0:\n        raise ValueError('Cannot divide by zero')\n    return a / b\n""",
+            "tests/__init__.py": "",
+            "tests/test_calculator.py": """import unittest
+from src.calculator import add, subtract, multiply, divide
+
+class TestCalculator(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(add(2, 3), 5)
+        self.assertEqual(add(-1, 1), 0)
+
+    def test_subtract(self):
+        self.assertEqual(subtract(10, 4), 6)
+
+    def test_multiply(self):
+        self.assertEqual(multiply(3, 7), 21)
+
+    def test_divide(self):
+        self.assertEqual(divide(10, 2), 5.0)
+        with self.assertRaises(ValueError):
+            divide(5, 0)
+
+if __name__ == "__main__":
+    unittest.main()
+""",
+            "README.md": """# Python Package Suite
+
+Run tests:
+```bash
+python3 -m unittest discover -s tests
+```
+""",
+        },
+    },
+}
+
+PROMPT_PRESETS = [
+    {
+        "id": 1,
+        "title": "REST API CRUD Lengkap dengan SQLite",
+        "category": "Backend",
+        "prompt": "Buat REST API backend lengkap dengan SQLite, CRUD endpoints, validasi input, modular router, unit test unittest/pytest, dan documentation di README.md.",
+    },
+    {
+        "id": 2,
+        "title": "Web App Modern Fullstack (HTML5 + Tailwind + JS)",
+        "category": "Frontend",
+        "prompt": "Buat aplikasi web frontend modern responsive ala dashboard dengan HTML5, Tailwind CSS, dark mode support, filter pencarian dinamis, dan local storage integration.",
+    },
+    {
+        "id": 3,
+        "title": "Bot Telegram Serbaguna (Python)",
+        "category": "Bot",
+        "prompt": "Buat bot Telegram modular dengan python-telegram-bot yang memiliki command /start, /help, /status, interactive inline keyboard buttons, error recovery, dan test.",
+    },
+    {
+        "id": 4,
+        "title": "Termux Mobile System Monitor & Tool",
+        "category": "Mobile/Termux",
+        "prompt": "Buat CLI automation utility khusus Termux/Linux yang bisa monitor baterai, storage space, CPU usage, kirim notifikasi termux-notification, dan command-line arguments dengan argparse.",
+    },
+    {
+        "id": 5,
+        "title": "Web Scraper & Data Extractor ke CSV/JSON",
+        "category": "Automation",
+        "prompt": "Buat script web scraper robust dengan header user-agent rotation, error handling retry backoff, ekstraksi struktur HTML, dan export otomatis ke file CSV serta JSON.",
+    },
+    {
+        "id": 6,
+        "title": "Sistem Autentikasi JWT & Password Hashing",
+        "category": "Security",
+        "prompt": "Buat modul autentikasi user lengkap: pendaftaran (register), login, password hashing dengan bcrypt/PBKDF2, JWT token generation & verification, middleware auth guard, serta unit tests.",
+    },
+    {
+        "id": 7,
+        "title": "CLI Tool Interaktif dengan Warna & Progress Bar",
+        "category": "CLI",
+        "prompt": "Buat CLI utility interaktif dengan tampilan warna ANSI modern, progress spinner/bar, subcommands, parsing argumen rapi, dan error handling tahan banting.",
+    },
+    {
+        "id": 8,
+        "title": "Refactoring & Clean Code Audit",
+        "category": "Quality",
+        "prompt": "Lakukan audit kode, refactoring ke prinsip SOLID, modularisasi fungsi panjang, tambahkan type annotations lengkap, docstrings, dan buat test suite dengan coverage tinggi.",
+    },
+    {
+        "id": 9,
+        "title": "API Mock Server & Data Generator",
+        "category": "Backend",
+        "prompt": "Buat mock server API lokal dengan endpoint pagination, search filter, delay simulation, dan generator data dummy realistis (user, produk, transaksi).",
+    },
+    {
+        "id": 10,
+        "title": "Project Scaffolding Bebas Sesuai Keinginan (Zero to One)",
+        "category": "Custom",
+        "prompt": "Jalankan superpower prompt-to-project untuk merancang arsitektur lengkap, membuat semua file kode, test suite, dan dokumentasi operasional.",
+    },
+]
 
 DOWNLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
 
@@ -2308,8 +3162,207 @@ def handle_download(rest):
     rel = os.path.relpath(zip_path, os.path.dirname(os.path.abspath(__file__)))
     success_line(f"💾 Download siap: {rel} ({size_kb:.1f} KB)")
     system_line(f"{DIM}  Isi: {', '.join(os.path.relpath(f, WORKSPACE_DIR) for f in resolved)}{RESET}")
+
+    phone_dl = get_phone_download_dir()
+    if phone_dl:
+        try:
+            phone_target = os.path.join(phone_dl, os.path.basename(zip_path))
+            shutil.copy2(zip_path, phone_target)
+            success_line(f"📱 Otomatis disalin ke memori HP: {phone_target}")
+        except Exception:
+            pass
+
+    termux_notify("Agent CLI", f"File {os.path.basename(zip_path)} siap diunduh!")
     print()
 
+
+
+def handle_template(rest):
+    arg = (rest or "").strip().lower()
+    if not arg or arg == "list":
+        system_line("📦 Template Proyek Siap Pakai (Built-in Boilerplates):", FG_CYAN)
+        for key, tpl in BUILTIN_TEMPLATES.items():
+            print(f"  {BOLD}{FG_GREEN}{key:<16}{RESET} {tpl['name']} — {DIM}{tpl['description']}{RESET}")
+        print()
+        system_line("Pakai: /template <nama>   (contoh: /template fastapi atau /template react-tailwind)")
+        return
+
+    if arg not in BUILTIN_TEMPLATES:
+        error_line(f"Template '{arg}' tidak ditemukan. Ketik '/template list' untuk melihat daftar.")
+        return
+
+    tpl = BUILTIN_TEMPLATES[arg]
+    created = []
+    os.makedirs(WORKSPACE_DIR, exist_ok=True)
+    for fname, content in tpl["files"].items():
+        fpath = os.path.join(WORKSPACE_DIR, fname)
+        os.makedirs(os.path.dirname(fpath) or WORKSPACE_DIR, exist_ok=True)
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(content)
+        created.append(fname)
+        _record_file(fpath)
+
+    success_line(f"Template '{tpl['name']}' berhasil dibuat di workspace/!")
+    for f in created:
+        print(f"  {FG_GREEN}✔{RESET} {f}")
+    print()
+    system_line("Gunakan '!ls' untuk melihat file, atau '/download' untuk membungkusnya dalam file zip.", FG_YELLOW)
+
+
+def handle_presets(rest, state):
+    arg = (rest or "").strip()
+    if not arg or arg == "list":
+        system_line("✨ Prompt Presets — Panduan Instan Generate Kode:", FG_CYAN)
+        for p in PROMPT_PRESETS:
+            print(f"  {BOLD}{FG_YELLOW}[{p['id']:>2}]{RESET} {BOLD}{p['title']}{RESET} {DIM}({p['category']}){RESET}")
+            print(f"       {DIM}{p['prompt'][:100]}...{RESET}")
+        print()
+        system_line("Pakai: /prompt <nomor>   (contoh: /prompt 1 untuk membuat REST API CRUD)")
+        return
+
+    if arg.isdigit():
+        idx = int(arg)
+        matched = [p for p in PROMPT_PRESETS if p["id"] == idx]
+        if not matched:
+            error_line(f"Preset #{idx} tidak ditemukan. Ketik '/prompt' untuk daftar.")
+            return
+        preset = matched[0]
+        system_line(f"🚀 Menjalankan Preset #{preset['id']}: {preset['title']}", FG_CYAN)
+        user_bubble(preset["prompt"])
+        run_task(preset["prompt"], state)
+        return
+
+    matched = [p for p in PROMPT_PRESETS if arg.lower() in p["title"].lower() or arg.lower() in p["category"].lower()]
+    if matched:
+        preset = matched[0]
+        system_line(f"🚀 Menjalankan Preset #{preset['id']}: {preset['title']}", FG_CYAN)
+        user_bubble(preset["prompt"])
+        run_task(preset["prompt"], state)
+    else:
+        error_line(f"Preset dengan kata kunci '{arg}' tidak ditemukan. Ketik '/prompt' untuk daftar.")
+
+
+def handle_diff(rest):
+    try:
+        res = subprocess.run(["git", "diff", "HEAD"], cwd=WORKSPACE_DIR, capture_output=True, text=True, timeout=10)
+        diff_text = res.stdout.strip()
+        if diff_text:
+            system_line("📄 Git Diff di workspace/:", FG_CYAN)
+            for line in diff_text.splitlines()[:100]:
+                if line.startswith("+"):
+                    print(f"{FG_GREEN}{line}{RESET}")
+                elif line.startswith("-"):
+                    print(f"{FG_RED}{line}{RESET}")
+                elif line.startswith("@@"):
+                    print(f"{FG_CYAN}{line}{RESET}")
+                else:
+                    print(f"{DIM}{line}{RESET}")
+            return
+    except Exception:
+        pass
+
+    arg = rest.strip()
+    if arg:
+        fpath = _resolve_ws_file(arg)
+        if fpath:
+            with open(fpath, "r", errors="replace") as f:
+                content = f.read()
+            system_line(f"📄 Isi file {arg}:", FG_CYAN)
+            for i, line in enumerate(content.splitlines()[:60], 1):
+                print(f"  {DIM}{i:>3} |{RESET} {line}")
+            return
+    system_line("Tidak ada perbedaan perubahan (git diff bersih) di workspace/.")
+
+
+def handle_snippet(rest):
+    SNIPPETS_DIR = os.path.join(CONFIG_DIR, "snippets")
+    os.makedirs(SNIPPETS_DIR, exist_ok=True)
+    parts = rest.strip().split(maxsplit=2)
+    sub = parts[0].lower() if parts else "list"
+
+    if sub == "list" or not rest.strip():
+        system_line("📚 Koleksi Snippet Kode Anda:", FG_CYAN)
+        files = sorted(os.listdir(SNIPPETS_DIR)) if os.path.isdir(SNIPPETS_DIR) else []
+        if not files:
+            print("  (belum ada snippet tersimpan)")
+        else:
+            for f in files:
+                size = os.path.getsize(os.path.join(SNIPPETS_DIR, f))
+                print(f"  {BOLD}•{RESET} {f:<20} {DIM}({size} B){RESET}")
+        print()
+        system_line("Pakai: /snippet save <nama> <file_workspace> | /snippet show <nama> | /snippet delete <nama>")
+        return
+
+    if sub == "save":
+        if len(parts) < 3:
+            error_line("Pakai: /snippet save <nama_snippet> <file_di_workspace>")
+            return
+        sname = parts[1].strip()
+        ws_file = _resolve_ws_file(parts[2].strip())
+        if not ws_file:
+            error_line(f"File '{parts[2]}' tidak ditemukan di workspace/.")
+            return
+        dest = os.path.join(SNIPPETS_DIR, sname)
+        shutil.copy2(ws_file, dest)
+        success_line(f"Snippet '{sname}' berhasil disimpan dari {parts[2]}!")
+        return
+
+    if sub == "show":
+        if len(parts) < 2:
+            error_line("Pakai: /snippet show <nama_snippet>")
+            return
+        sname = parts[1].strip()
+        target = os.path.join(SNIPPETS_DIR, sname)
+        if not os.path.isfile(target):
+            error_line(f"Snippet '{sname}' tidak ditemukan.")
+            return
+        with open(target, "r", errors="replace") as f:
+            print(f"{FG_CYAN}=== Snippet: {sname} ==={RESET}\n" + f.read())
+        return
+
+    if sub in ("delete", "rm"):
+        if len(parts) < 2:
+            error_line("Pakai: /snippet delete <nama_snippet>")
+            return
+        sname = parts[1].strip()
+        target = os.path.join(SNIPPETS_DIR, sname)
+        if os.path.isfile(target):
+            os.remove(target)
+            success_line(f"Snippet '{sname}' dihapus.")
+        else:
+            error_line(f"Snippet '{sname}' tidak ditemukan.")
+        return
+
+    error_line("Sub-perintah snippet tidak dikenal. Ketik '/snippet list' untuk bantuan.")
+
+
+def handle_stats(state):
+    skills = load_skills()
+    ws_files = []
+    ws_size = 0
+    if os.path.isdir(WORKSPACE_DIR):
+        for root, dirs, files in os.walk(WORKSPACE_DIR):
+            for fn in files:
+                fp = os.path.join(root, fn)
+                try:
+                    ws_files.append(fp)
+                    ws_size += os.path.getsize(fp)
+                except OSError:
+                    pass
+
+    system_line("📊 Statistik Sesi & Sistem Agent:", FG_CYAN)
+    print(f"  Versi Agent        : v{VERSION}")
+    print(f"  Model Aktif        : {state.model['label']} ({state.model['id']})")
+    print(f"  Reasoning / Effort : {'ON' if state.thinking_on else 'OFF'} ({state.effort.upper()})")
+    print(f"  Pesan dalam Sesi   : {len(state.messages)} pesan")
+    print(f"  Langkah per Tugas  : {state.max_steps}")
+    print(f"  Superpower Skills  : {len(skills)} skill siap pakai")
+    print(f"  File di Workspace  : {len(ws_files)} file ({ws_size / 1024:.1f} KB)")
+    print(f"  Platform           : {'📱 Android Termux' if is_termux() else '💻 Desktop/Server'}")
+    phone_dir = get_phone_download_dir()
+    if phone_dir:
+        print(f"  Storage Eksternal  : {phone_dir}")
+    print()
 
 def handle_skills(rest):
     """/skills — lihat daftar skill; /skills <nama> — baca isinya."""
@@ -2435,6 +3488,156 @@ def handle_slash_command(cmd, state):
 
     if name in ("/download", "/d"):
         handle_download(rest)
+        return False
+
+    if name in ("/gen", "/generate"):
+        if not rest:
+            system_line("Pakai: /generate <permintaan kode/proyek>")
+            system_line("Contoh: /generate bikin REST API absensi karyawan dengan SQLite dan FastAPI")
+            return False
+        prompt = (
+            f"Gunakan superpower prompt-to-project untuk membuat implementasi lengkap dari permintaan berikut: {rest}. "
+            "Rancang struktur proyek yang bersih, buat semua file kode yang dibutuhkan di workspace/, "
+            "tuliskan unit test yang lengkap, dan jalankan verifikasinya sampai selesai."
+        )
+        user_bubble(f"/generate {rest}")
+        run_task(prompt, state)
+        return False
+
+    if name in ("/template", "/tpl", "/boilerplates"):
+        handle_template(rest)
+        return False
+
+    if name in ("/prompt", "/presets", "/preset"):
+        handle_presets(rest, state)
+        return False
+
+    if name in ("/explain",):
+        if not rest:
+            error_line("Pakai: /explain <nama_file>")
+            return False
+        ws_f = _resolve_ws_file(rest)
+        if not ws_f:
+            error_line(f"File '{rest}' tidak ditemukan di workspace/.")
+            return False
+        prompt = (
+            f"Gunakan skill reverse-engineering-and-analysis untuk memeriksa dan menganalisis file '{rest}'. "
+            "Jelaskan arsitekturnya, alur fungsi/metode, tipe data, serta dependensinya secara detail."
+        )
+        user_bubble(f"/explain {rest}")
+        run_task(prompt, state)
+        return False
+
+    if name in ("/refactor",):
+        if not rest:
+            error_line("Pakai: /refactor <nama_file>")
+            return False
+        ws_f = _resolve_ws_file(rest)
+        if not ws_f:
+            error_line(f"File '{rest}' tidak ditemukan di workspace/.")
+            return False
+        prompt = (
+            f"Gunakan skill code-refactoring-and-clean-code untuk merefaktor file '{rest}'. "
+            "Terapkan prinsip Clean Code & SOLID, modularisasi fungsi panjang, tambahkan type annotations dan docstrings, "
+            "serta pastikan tidak mengubah perilaku eksternal dan semua test tetap lolos."
+        )
+        user_bubble(f"/refactor {rest}")
+        run_task(prompt, state)
+        return False
+
+    if name in ("/testgen",):
+        if not rest:
+            error_line("Pakai: /testgen <nama_file>")
+            return False
+        ws_f = _resolve_ws_file(rest)
+        if not ws_f:
+            error_line(f"File '{rest}' tidak ditemukan di workspace/.")
+            return False
+        prompt = (
+            f"Gunakan skill test-driven-development untuk membuat file unit test komprehensif untuk '{rest}'. "
+            "Tulis test cases menyeluruh (happy path, edge cases, error conditions) dan jalankan verifikasinya via bash."
+        )
+        user_bubble(f"/testgen {rest}")
+        run_task(prompt, state)
+        return False
+
+    if name in ("/fix",):
+        if not rest:
+            error_line("Pakai: /fix <nama_file>")
+            return False
+        prompt = (
+            f"Gunakan skill systematic-debugging untuk mendiagnosis kesalahan atau bug pada '{rest}'. "
+            "Temukan akar masalahnya, perbaiki kodenya, dan jalankan verifikasi sampai bersih tanpa error."
+        )
+        user_bubble(f"/fix {rest}")
+        run_task(prompt, state)
+        return False
+
+    if name in ("/export", "/zip"):
+        zname = (rest or f"workspace-export-{time.strftime('%Y%m%d-%H%M%S')}").strip()
+        if not zname.endswith(".zip"):
+            zname += ".zip"
+        os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+        zpath = os.path.join(DOWNLOADS_DIR, zname)
+        file_count = 0
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(WORKSPACE_DIR):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    rel = os.path.relpath(fp, WORKSPACE_DIR)
+                    zf.write(fp, arcname=rel)
+                    file_count += 1
+        success_line(f"💾 Seluruh workspace ({file_count} file) berhasil diekspor ke: {zpath}")
+        phone_dl = get_phone_download_dir()
+        if phone_dl:
+            try:
+                dest = os.path.join(phone_dl, zname)
+                shutil.copy2(zpath, dest)
+                success_line(f"📱 Otomatis disalin ke memori HP: {dest}")
+            except Exception:
+                pass
+        return False
+
+    if name in ("/copy",):
+        if not rest:
+            error_line("Pakai: /copy <nama_file_workspace>")
+            return False
+        ws_f = _resolve_ws_file(rest)
+        if not ws_f:
+            error_line(f"File '{rest}' tidak ditemukan di workspace/.")
+            return False
+        with open(ws_f, "r", errors="replace") as f:
+            content = f.read()
+        if clipboard_set(content):
+            success_line(f"Isi file '{rest}' ({len(content)} karakter) disalin ke clipboard!")
+        else:
+            system_line(f"Clipboard helper tidak tersedia. Menampilkan isi file '{rest}':\n{content[:500]}")
+        return False
+
+    if name in ("/paste",):
+        clip = clipboard_get()
+        if not clip:
+            error_line("Clipboard sistem kosong atau utilitas clipboard tidak terpasang.")
+            return False
+        target_f = rest.strip() or f"clipboard_{time.strftime('%H%M%S')}.txt"
+        target_p = _safe_path(target_f)
+        os.makedirs(os.path.dirname(target_p) or WORKSPACE_DIR, exist_ok=True)
+        with open(target_p, "w", encoding="utf-8") as f:
+            f.write(clip)
+        _record_file(target_p)
+        success_line(f"Teks dari clipboard ({len(clip)} karakter) disimpan ke workspace/{target_f}!")
+        return False
+
+    if name in ("/diff",):
+        handle_diff(rest)
+        return False
+
+    if name in ("/snippet", "/snippets"):
+        handle_snippet(rest)
+        return False
+
+    if name in ("/stats", "/info"):
+        handle_stats(state)
         return False
 
     if name in ("/skills", "/skill"):
@@ -2956,11 +4159,6 @@ def doctor(verbose=True):
     elif n_skills == 0:
         problems.append("Folder skills/ ada tapi KOSONG — gak ada skill yang kemuat.")
 
-    try:
-        import requests  # noqa: F401
-    except ImportError:
-        problems.append("Modul 'requests' belum keinstall — jalanin: pip install -r requirements.txt")
-
     if sys.version_info < (3, 7):
         problems.append(
             f"Python kamu {sys.version_info.major}.{sys.version_info.minor} — butuh minimal 3.7."
@@ -2971,15 +4169,20 @@ def doctor(verbose=True):
 
     w = term_width()
     print(f"{FG_CYAN}{BOLD}{'═' * w}{RESET}")
-    print(f"{FG_CYAN}{BOLD}🩺 Agent Doctor — cek instalasi{RESET}")
+    print(f"{FG_CYAN}{BOLD}🩺 Agent Doctor — Cek Instalasi & Diagnostik Sistem{RESET}")
     print(f"{FG_CYAN}{BOLD}{'═' * w}{RESET}")
-    print(f"  Versi Agent   : v{VERSION}")
+    print(f"  Versi Agent   : v{VERSION} (Superpowers Code Generator Edition)")
     print(f"  Python        : {sys.version.split()[0]}  ({sys.executable})")
     print(f"  Lokasi main.py: {os.path.join(here, 'main.py')}")
     print(f"  Folder kerja  : {os.getcwd()}")
     print(f"  Folder skills : {SKILLS_DIR}")
-    print(f"  Skill kemuat  : {n_skills}")
+    print(f"  Skill kemuat  : {n_skills} Superpower skills")
     print(f"  Lebar layar   : {w} kolom{'  (mode HP/sempit)' if is_narrow() else ''}")
+    print(f"  Platform      : {'📱 Android Termux' if is_termux() else '💻 Desktop/Linux/macOS'}")
+    phone_dl = get_phone_download_dir()
+    if phone_dl:
+        print(f"  Storage HP    : {phone_dl} (tersambung)")
+    print(f"  HTTP Engine   : {'requests (native)' if HAS_REQUESTS else 'urllib (built-in fallback zero-dependency)'}")
     print()
 
     if problems:
@@ -2991,12 +4194,11 @@ def doctor(verbose=True):
         print(f"{FG_YELLOW}  rm -rf Agent{RESET}")
         print(f"{FG_YELLOW}  git clone https://github.com/EdwardsVD/Agent.git{RESET}")
         print(f"{FG_YELLOW}  cd Agent{RESET}")
-        print(f"{FG_YELLOW}  pip install -r requirements.txt{RESET}")
-        print(f"{FG_YELLOW}  python main.py{RESET}")
+        print(f"{FG_YELLOW}  bash run.sh{RESET}")
         print()
         return False
 
-    success_line("Semua aman. Superpowers siap dipakai.")
+    success_line("Semua aman. 24 Superpower skills & Code Generator siap dipakai!")
     print()
     return True
 
