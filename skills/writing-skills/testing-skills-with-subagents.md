@@ -331,29 +331,29 @@ Before deploying skill, verify you followed RED-GREEN-REFACTOR:
 
 ## Common Mistakes (Same as TDD)
 
-**❌ Writing skill before testing (skipping RED)**
+**[FAIL] Writing skill before testing (skipping RED)**
 Reveals what YOU think needs preventing, not what ACTUALLY needs preventing.
-✅ Fix: Always run baseline scenarios first.
+[PASS] Fix: Always run baseline scenarios first.
 
-**❌ Not watching test fail properly**
+**[FAIL] Not watching test fail properly**
 Running only academic tests, not real pressure scenarios.
-✅ Fix: Use pressure scenarios that make agent WANT to violate.
+[PASS] Fix: Use pressure scenarios that make agent WANT to violate.
 
-**❌ Weak test cases (single pressure)**
+**[FAIL] Weak test cases (single pressure)**
 Agents resist single pressure, break under multiple.
-✅ Fix: Combine 3+ pressures (time + sunk cost + exhaustion).
+[PASS] Fix: Combine 3+ pressures (time + sunk cost + exhaustion).
 
-**❌ Not capturing exact failures**
+**[FAIL] Not capturing exact failures**
 "Agent was wrong" doesn't tell you what to prevent.
-✅ Fix: Document exact rationalizations verbatim.
+[PASS] Fix: Document exact rationalizations verbatim.
 
-**❌ Vague fixes (adding generic counters)**
+**[FAIL] Vague fixes (adding generic counters)**
 "Don't cheat" doesn't work. "Don't keep as reference" does.
-✅ Fix: Add explicit negations for each specific rationalization.
+[PASS] Fix: Add explicit negations for each specific rationalization.
 
-**❌ Stopping after first pass**
+**[FAIL] Stopping after first pass**
 Tests pass once ≠ bulletproof.
-✅ Fix: Continue REFACTOR cycle until no new rationalizations.
+[PASS] Fix: Continue REFACTOR cycle until no new rationalizations.
 
 ## Quick Reference (TDD Cycle)
 

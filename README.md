@@ -1,4 +1,4 @@
-# Agent CLI — Coding Agent dengan 🦸 24 SUPERPOWERS & Code Generator Engine
+# Agent CLI — Coding Agent dengan [SUPERPOWERS] 24 SUPERPOWERS & Code Generator Engine
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Termux%20%7C%20Linux%20%7C%20macOS%20%7C%20Windows-green.svg)]()
@@ -9,16 +9,16 @@ Coding agent CLI canggih yang **bukan cuma punya tools**, tapi memiliki **disipl
 
 ---
 
-## 💾 Link Download File .Zip
+## [SAVE] Link Download File .Zip
 
 Kamu bisa langsung mengunduh source code lengkap versi terbaru dalam format `.zip`:
 
-- 📦 **Download Direct Branch ZIP**: [Agent-v3.2.0 (Branch arena/01a01943-agent.zip)](https://github.com/EdwardsVD/Agent/archive/refs/heads/arena/01a01943-agent.zip)
-- 📦 **File Zip Bundled di Repo**: `Agent-v3.2.0-superpowers.zip` (Tersedia langsung di root repository)
+-  **Download Direct Branch ZIP**: [Agent-v3.2.0 (Branch arena/01a01943-agent.zip)](https://github.com/EdwardsVD/Agent/archive/refs/heads/arena/01a01943-agent.zip)
+-  **File Zip Bundled di Repo**: `Agent-v3.2.0-superpowers.zip` (Tersedia langsung di root repository)
 
 ---
 
-## 📱 Cara Install & Jalankan di TERMUX (Android)
+## [TERMUX] Cara Install & Jalankan di TERMUX (Android)
 
 Instalasi di Termux dibuat **100% anti-gagal, otomatis, dan tahan banting**:
 
@@ -51,7 +51,7 @@ agent
 
 ---
 
-## 💻 Cara Install di Linux / macOS / Windows
+## [BASH] Cara Install di Linux / macOS / Windows
 
 ```bash
 git clone https://github.com/EdwardsVD/Agent.git
@@ -61,9 +61,9 @@ bash run.sh
 
 ---
 
-## ✨ Yang Baru di v3.2.0 (Superpowers Code Generator Edition) 🚀
+## [PRESET] Yang Baru di v3.2.0 (Superpowers Code Generator Edition) 
 
-### 1. 🦸 24 Superpower Skills (Lengkap untuk Segala Kebutuhan Ngoding)
+### 1. [SUPERPOWERS] 24 Superpower Skills (Lengkap untuk Segala Kebutuhan Ngoding)
 Agent dibekali 24 modul disiplin kerja & spesialisasi kode yang bisa dipanggil kapan saja:
 
 | No | Skill | Alias Populer | Deskripsi / Kegunaan |
@@ -95,7 +95,7 @@ Agent dibekali 24 modul disiplin kerja & spesialisasi kode yang bisa dipanggil k
 
 ---
 
-### 2. ⚡ Perintah Instan Pembuatan Kode & Boilerplates
+### 2. [FAST] Perintah Instan Pembuatan Kode & Boilerplates
 
 - **/generate `<prompt>`** (atau `/gen`): AI langsung merancang arsitektur, menulis seluruh file di `workspace/`, membuat unit test, dan menjalankan verifikasi sampai selesai.
 - **/template `[nama]`** (atau `/tpl`): Buat template proyek instan:
@@ -111,13 +111,13 @@ Agent dibekali 24 modul disiplin kerja & spesialisasi kode yang bisa dipanggil k
 
 ---
 
-### 3. 🛡 Zero-Dependency Fallback HTTP Engine
+### 3. [SECURITY] Zero-Dependency Fallback HTTP Engine
 - Jika modul `requests` belum terpasang atau pip bermasalah di Termux, Agent **TIDAK AKAN CRASH**!
 - Built-in HTTP shim berbasis `urllib` standar Python otomatis aktif dan menjalankan semua panggilan API & pencarian web dengan lancar.
 
 ---
 
-### 4. 📱 Integrasi Penuh Termux & Android
+### 4. [TERMUX] Integrasi Penuh Termux & Android
 - **Auto-Export ke Memori HP**: Setiap kali membuat file `.zip` via `/download` atau `/export`, file otomatis disalin langsung ke folder `Download/` HP (`/sdcard/Download` atau `~/storage/shared/Download`).
 - **Android Notifications**: Mengirim notifikasi Android saat tugas selesai jika `termux-api` terpasang.
 - **Clipboard Universal**: Perintah `/copy <file>` dan `/paste` terintegrasi dengan `termux-clipboard-set/get`, `pbcopy/pbpaste`, `xclip`, `wl-copy`, dan `clip`.
@@ -125,7 +125,7 @@ Agent dibekali 24 modul disiplin kerja & spesialisasi kode yang bisa dipanggil k
 
 ---
 
-### 5. 🧠 Model AI Terbaru & Custom Gateway
+### 5. [THINKING] Model AI Terbaru & Custom Gateway
 Daftar model yang didukung di `/models` dan `/model <nama>`:
 - `sonnet37` — Claude 3.7 Sonnet (Anthropic)
 - `sonnet35` — Claude 3.5 Sonnet (Anthropic)
@@ -141,7 +141,7 @@ Daftar model yang didukung di `/models` dan `/model <nama>`:
 
 ---
 
-## 📋 Daftar Perintah Lengkap (Slash Commands)
+## [PLAN] Daftar Perintah Lengkap (Slash Commands)
 
 | Perintah | Deskripsi |
 |---|---|
@@ -173,7 +173,7 @@ Daftar model yang didukung di `/models` dan `/model <nama>`:
 
 ---
 
-## 🧪 Pengujian & Kehandalan (101 Tests Passed)
+## [TEST] Pengujian & Kehandalan (101 Tests Passed)
 
 Seluruh komponen diuji dengan unit test komprehensif:
 ```bash
@@ -190,6 +190,6 @@ Hasil pengujian: **101 tests passed (100% OK)** mencakup:
 
 ---
 
-## 📄 Lisensi
+## [FILE] Lisensi
 - Kode Harness Agent: MIT License
 - Superpower Skills: MIT License © Jesse Vincent (obra/superpowers)

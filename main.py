@@ -527,7 +527,7 @@ def intro_animation(duration=1.8, load_duration=1.8):
 
 def banner():
     w = term_width()
-    title = f"Agent CLI v{VERSION}  ·  🦸 Superpowers + thinking + AI search"
+    title = f"Agent CLI v{VERSION}  ·  [SUPERPOWERS] Superpowers + thinking + AI search"
     line = "═" * w
     print(f"{FG_CYAN}{BOLD}{line}{RESET}")
     print(f"{FG_CYAN}{BOLD}{title.center(w)}{RESET}")
@@ -544,7 +544,7 @@ def banner():
         )
     else:
         print(
-            f"{FG_RED}{BOLD}⚠ Folder skills/ gak ketemu — Superpowers MATI, agent "
+            f"{FG_RED}{BOLD}[WARN] Folder skills/ gak ketemu — Superpowers MATI, agent "
             f"jalan mode polos.{RESET}"
         )
         print(
@@ -592,10 +592,10 @@ def toolbar(state):
     sp_on = bool(state.config.get("superpowers", True)) and n_skills > 0
     gates_on = sp_on and state.config.get("gates", True)
     if not n_skills:
-        sp_text = " 🦸 Superpowers: OFF (skills/ gak ada) "
+        sp_text = " [SUPERPOWERS] Superpowers: OFF (skills/ gak ada) "
         sp_color = FG_RED
     else:
-        sp_text = f" 🦸 Superpowers: {'ON' if sp_on else 'OFF'}"
+        sp_text = f" [SUPERPOWERS] Superpowers: {'ON' if sp_on else 'OFF'}"
         sp_text += f" (gates {'ON' if gates_on else 'OFF'}) " if sp_on else " "
         sp_color = FG_GREEN if sp_on else FG_GREY
 
@@ -622,7 +622,7 @@ def user_bubble(text):
     print()
 
 
-def thinking_header(label="🧠 Thinking"):
+def thinking_header(label="[THINKING] Thinking"):
     w = term_width()
     bar = "─" * max(0, w - _visible_len(label) - 1)
     print(f"{FG_MAGENTA}{BOLD}{label}{RESET}{FG_MAGENTA} {bar}{RESET}", flush=True)
@@ -638,7 +638,7 @@ def thinking_footer():
     print(f"{FG_MAGENTA}{'─' * w}{RESET}")
 
 
-def thinking_block(text, label="🧠 Thinking"):
+def thinking_block(text, label="[THINKING] Thinking"):
     w = term_width()
     bar = "─" * max(0, w - _visible_len(label) - 1)
     print(f"{FG_MAGENTA}{BOLD}{label}{RESET}{FG_MAGENTA} {bar}{RESET}")
@@ -650,31 +650,31 @@ def thinking_block(text, label="🧠 Thinking"):
 def _action_label(tool_name, args):
     a = args or {}
     styles = {
-        "list_files": ("📂 List", str(a.get("path", "."))),
-        "grep_files": ("🔍 Grep", '"{}" di {}'.format(a.get("pattern", "?"), a.get("path", "."))),
-        "read_file": ("📖 Baca", str(a.get("path", "?"))),
-        "write_file": ("📝 Tulis", str(a.get("path", "?"))),
-        "edit_file": ("✏️ Edit", str(a.get("path", "?"))),
-        "bash": ("💻 Bash", str(a.get("command", "?"))),
+        "list_files": ("[DIR] List", str(a.get("path", "."))),
+        "grep_files": ("[SEARCH] Grep", '"{}" di {}'.format(a.get("pattern", "?"), a.get("path", "."))),
+        "read_file": ("[READ] Baca", str(a.get("path", "?"))),
+        "write_file": ("[WRITE] Tulis", str(a.get("path", "?"))),
+        "edit_file": ("[EDIT] Edit", str(a.get("path", "?"))),
+        "bash": ("[BASH] Bash", str(a.get("command", "?"))),
         "web_search": (
-            "🔎 Search",
+            "[SEARCH] Search",
             '"{q}" (limit={l}, engine={e})'.format(
                 q=a.get("query", "?"), l=a.get("limit", 5), e=a.get("engine", "auto")
             ),
         ),
-        "web_fetch": ("📄 Fetch", str(a.get("url", "?"))),
+        "web_fetch": ("[FILE] Fetch", str(a.get("url", "?"))),
         "skill": (
-            "🦸 Skill",
+            "[SUPERPOWERS] Skill",
             "{}{}".format(
                 a.get("name") or a.get("skill") or "?",
                 f" / {a.get('resource')}" if a.get("resource") else "",
             ),
         ),
-        "list_skills": ("🦸 Skills", "daftar semua skill Superpowers"),
-        "todo_write": ("📋 Rencana", f"{len(a.get('todos') or [])} task"),
-        "ask_user": ("🙋 Tanya", str(a.get("question", "?"))[:100]),
+        "list_skills": ("[SUPERPOWERS] Skills", "daftar semua skill Superpowers"),
+        "todo_write": ("[PLAN] Rencana", f"{len(a.get('todos') or [])} task"),
+        "ask_user": ("[APPROVAL] Tanya", str(a.get("question", "?"))[:100]),
     }
-    return styles.get(tool_name, (f"⚙ {tool_name}", json.dumps(a, ensure_ascii=False)[:120]))
+    return styles.get(tool_name, (f"[CONFIG] {tool_name}", json.dumps(a, ensure_ascii=False)[:120]))
 
 
 def action_line(tool_name, args):
@@ -700,11 +700,11 @@ def system_line(text, color=FG_CYAN):
 
 
 def error_line(text):
-    print(f"{FG_RED}{BOLD}✖ {text}{RESET}")
+    print(f"{FG_RED}{BOLD}[X] {text}{RESET}")
 
 
 def success_line(text):
-    print(f"{FG_GREEN}{BOLD}✔ {text}{RESET}")
+    print(f"{FG_GREEN}{BOLD}[OK] {text}{RESET}")
 
 
 def done_line(summary):
@@ -719,7 +719,7 @@ def done_line(summary):
 
 def skill_line(key, purpose=""):
     tail = f" {DIM}→ {purpose}{RESET}" if purpose else ""
-    print(f"{FG_CYAN}{BOLD}🦸 Using skill{RESET} {FG_CYAN}{key}{RESET}{tail}")
+    print(f"{FG_CYAN}{BOLD}[SUPERPOWERS] Using skill{RESET} {FG_CYAN}{key}{RESET}{tail}")
 
 
 def gate_line(text):
@@ -727,7 +727,7 @@ def gate_line(text):
     w = term_width()
     lines = text.splitlines() or [""]
     head = lines[0]
-    print(f"{FG_RED}{BOLD}🛑 {head}{RESET}")
+    print(f"{FG_RED}{BOLD}[GATE] {head}{RESET}")
     for line in lines[1:]:
         for wrapped in _wrap_lines(line, w - 3):
             print(f"{FG_RED}{DIM}   {wrapped}{RESET}")
@@ -735,9 +735,9 @@ def gate_line(text):
 
 
 TODO_MARK = {
-    "done": ("✔", FG_GREEN),
-    "in_progress": ("▶", FG_YELLOW),
-    "blocked": ("✖", FG_RED),
+    "done": ("[OK]", FG_GREEN),
+    "in_progress": (">", FG_YELLOW),
+    "blocked": ("[X]", FG_RED),
     "pending": ("○", FG_GREY),
 }
 
@@ -745,7 +745,7 @@ TODO_MARK = {
 def todo_panel(todos):
     w = term_width()
     done = sum(1 for t in todos if t.get("status") == "done")
-    title = f" 📋 Rencana kerja  ({done}/{len(todos)} beres) "
+    title = f" [PLAN] Rencana kerja  ({done}/{len(todos)} beres) "
     print(f"{BG_DARKGREY}{FG_WHITE}{BOLD}{title.ljust(w)}{RESET}")
     for t in todos:
         mark, color = TODO_MARK.get(t.get("status", "pending"), TODO_MARK["pending"])
@@ -757,7 +757,7 @@ def todo_panel(todos):
 def question_panel(question, options):
     w = term_width()
     print()
-    print(f"{BG_BLUE}{FG_WHITE}{BOLD}{' 🙋 Butuh keputusan kamu '.ljust(w)}{RESET}")
+    print(f"{BG_BLUE}{FG_WHITE}{BOLD}{' [APPROVAL] Butuh keputusan kamu '.ljust(w)}{RESET}")
     for line in _wrap_lines(question, w - 2):
         print(f"{FG_WHITE}{BOLD} {line}{RESET}")
     for i, opt in enumerate(options, 1):
@@ -2330,7 +2330,7 @@ RED FLAGS — kalau pikiran ini muncul, kamu lagi cari pembenaran. BERHENTI.
 ATURAN TAMBAHAN:
 - Jangan menyerah kalau bash error — baca outputnya, cari akarnya, perbaiki.
 - JSON INPUT harus valid (pakai \\n untuk newline di dalam string).
-- Kalau gate (🛑 GATE [...]) muncul di OBSERVATION, itu disiplin Superpowers nge-block
+- Kalau gate ([GATE] GATE [...]) muncul di OBSERVATION, itu disiplin Superpowers nge-block
   kamu. JANGAN diakalin — kerjain persis yang dia minta, baru lanjut.
 - Jujur soal ketidakpastian. Lebih baik bilang "belum kebukti" daripada ngarang.
 - Jawab pakai bahasa yang dipakai user (default Indonesia).
@@ -2440,22 +2440,22 @@ def parse_response(text):
 
 HELP_TEXT = """Perintah yang tersedia:
   /help                          Tampilkan bantuan ini
-  /skills                        🦸 Lihat 24 skill Superpowers yang dimuat
+  /skills                        [SUPERPOWERS] Lihat 24 skill Superpowers yang dimuat
   /skills <nama>                 Baca isi 1 skill, contoh: /skills fullstack
-  /generate <prompt>             ⚡ Mode cepat generate kode / proyek
-  /template [nama]               📦 Buat template proyek instan (fastapi, flask, termux-tool, dll)
-  /prompt [no]                   ✨ Presets prompt panduan instan pembuatan kode
-  /refactor <file>               🧹 Refactor kode dengan prinsip Clean Code & SOLID
-  /testgen <file>                🧪 Generate unit test komprehensif untuk file
-  /explain <file>                📖 Analisis & jelaskan arsitektur serta alur file
-  /fix <file>                    🔧 Diagnosis error dan perbaiki bug otomatis
-  /export atau /zip [nama]       💾 Ekspor seluruh workspace ke zip (auto salin ke HP)
-  /copy <file>                   📋 Salin isi file workspace ke clipboard sistem / Termux
-  /paste [file_tujuan]           📥 Tempel isi clipboard ke file workspace
-  /diff [file]                   📄 Tampilkan perbedaan perubahan kode (git diff)
-  /snippet [list|save|show|del]  📚 Manajemen koleksi snippet kode
-  /stats                         📊 Statistik sesi, token, workspace, & platform
-  /doctor                        🩺 Cek instalasi sistem & kesehatan Termux
+  /generate <prompt>             [FAST] Mode cepat generate kode / proyek
+  /template [nama]                Buat template proyek instan (fastapi, flask, termux-tool, dll)
+  /prompt [no]                   [PRESET] Presets prompt panduan instan pembuatan kode
+  /refactor <file>               [REFACTOR] Refactor kode dengan prinsip Clean Code & SOLID
+  /testgen <file>                [TEST] Generate unit test komprehensif untuk file
+  /explain <file>                [READ] Analisis & jelaskan arsitektur serta alur file
+  /fix <file>                    [FIX] Diagnosis error dan perbaiki bug otomatis
+  /export atau /zip [nama]       [SAVE] Ekspor seluruh workspace ke zip (auto salin ke HP)
+  /copy <file>                   [PLAN] Salin isi file workspace ke clipboard sistem / Termux
+  /paste [file_tujuan]           [PASTE] Tempel isi clipboard ke file workspace
+  /diff [file]                   [FILE] Tampilkan perbedaan perubahan kode (git diff)
+  /snippet [list|save|show|del]  [SNIPPET] Manajemen koleksi snippet kode
+  /stats                         [STATS] Statistik sesi, token, workspace, & platform
+  /doctor                        [DOCTOR] Cek instalasi sistem & kesehatan Termux
   /superpowers                   Status metodologi Superpowers (24 skill & gates)
   /superpowers on|off            Nyalakan / matikan metodologi (SOP + skill)
   /superpowers gates on|off      Gate keras (approval, TDD, verifikasi) on/off
@@ -2483,7 +2483,7 @@ HELP_TEXT = """Perintah yang tersedia:
 
 Selain itu, ketik pesan bebas untuk meminta AI membuatkan program apa saja!
 
-🦸 SUPERPOWERS (24 SKILLS & GATES): Agent dipersenjatai SOP otomatis:
+[SUPERPOWERS] SUPERPOWERS (24 SKILLS & GATES): Agent dipersenjatai SOP otomatis:
    brainstorm & approval -> rencana (todo) -> TDD (test dulu) -> verifikasi -> self-review.
    Dilengkapi skill: prompt-to-project, fullstack-code-generator, api-design, database-architect,
    code-refactoring, frontend-ui, security-hardening, scripting-automation, bot-builder, dll.
@@ -2691,9 +2691,9 @@ def get_battery():
 def notify(msg):
     if shutil.which("termux-notification"):
         subprocess.run(["termux-notification", "--title", "Termux Agent", "--content", msg])
-        print(f"📱 Notifikasi dikirim: {msg}")
+        print(f"[TERMUX] Notifikasi dikirim: {msg}")
     else:
-        print(f"💬 {msg}")
+        print(f"[MSG] {msg}")
 
 def main():
     parser = argparse.ArgumentParser(description="Termux Power CLI Utility")
@@ -2703,13 +2703,13 @@ def main():
     args = parser.parse_args()
 
     if args.battery:
-        print("🔋 Status Baterai:", get_battery())
+        print("[BATTERY] Status Baterai:", get_battery())
     elif args.notify:
         notify(args.notify)
     elif args.info:
-        print("📱 Python:", sys.version)
-        print("📁 CWD:", os.getcwd())
-        print("💾 Termux:", "Yes" if "TERMUX_VERSION" in os.environ else "No")
+        print("[TERMUX] Python:", sys.version)
+        print("[DIR] CWD:", os.getcwd())
+        print("[SAVE] Termux:", "Yes" if "TERMUX_VERSION" in os.environ else "No")
     else:
         parser.print_help()
 
@@ -2838,7 +2838,7 @@ if __name__ == "__main__":
 <body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col font-sans">
   <header class="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
     <div class="flex items-center space-x-3">
-      <span class="text-2xl">⚡</span>
+      <span class="text-2xl">[FAST]</span>
       <h1 class="font-bold text-xl tracking-tight text-brand">Agent App</h1>
     </div>
     <button id="themeToggle" class="px-3 py-1 text-xs font-semibold rounded-lg bg-zinc-800 hover:bg-zinc-700 transition">Toggle Theme</button>
@@ -2865,9 +2865,9 @@ if __name__ == "__main__":
 """,
             "app.js": """document.addEventListener("DOMContentLoaded", () => {
   const cards = [
-    { title: "⚡ Kecepatan Tinggi", desc: "Aplikasi ringan tanpa build step berat." },
-    { title: "📱 Termux Ready", desc: "Dukungan layar HP dan mobile development." },
-    { title: "🔒 Aman & Bersih", desc: "Arsitektur bersih dan teruji dengan TDD." }
+    { title: "[FAST] Kecepatan Tinggi", desc: "Aplikasi ringan tanpa build step berat." },
+    { title: "[TERMUX] Termux Ready", desc: "Dukungan layar HP dan mobile development." },
+    { title: "[SECURE] Aman & Bersih", desc: "Arsitektur bersih dan teruji dengan TDD." }
   ];
 
   const grid = document.getElementById("cardsGrid");
@@ -2917,7 +2917,7 @@ class SimpleHTMLScraper:
     def save_json(self, data, path="output.json"):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-        print(f"✔ Data saved to {path}")
+        print(f"[OK] Data saved to {path}")
 
 if __name__ == "__main__":
     print("Scraper ready.")
@@ -3103,7 +3103,7 @@ def handle_download(rest):
             system_line("Belum ada file yang dibuat di tugas terakhir.", FG_YELLOW)
             system_line("Pakai: /download -f <nama file di workspace>")
             return
-        system_line("📦 File hasil kerja terakhir (workspace/):", FG_CYAN)
+        system_line(" File hasil kerja terakhir (workspace/):", FG_CYAN)
         for i, f in enumerate(LAST_TASK_FILES, 1):
             full = os.path.join(WORKSPACE_DIR, f)
             size = os.path.getsize(full) if os.path.isfile(full) else 0
@@ -3160,7 +3160,7 @@ def handle_download(rest):
 
     size_kb = os.path.getsize(zip_path) / 1024
     rel = os.path.relpath(zip_path, os.path.dirname(os.path.abspath(__file__)))
-    success_line(f"💾 Download siap: {rel} ({size_kb:.1f} KB)")
+    success_line(f"[SAVE] Download siap: {rel} ({size_kb:.1f} KB)")
     system_line(f"{DIM}  Isi: {', '.join(os.path.relpath(f, WORKSPACE_DIR) for f in resolved)}{RESET}")
 
     phone_dl = get_phone_download_dir()
@@ -3168,7 +3168,7 @@ def handle_download(rest):
         try:
             phone_target = os.path.join(phone_dl, os.path.basename(zip_path))
             shutil.copy2(zip_path, phone_target)
-            success_line(f"📱 Otomatis disalin ke memori HP: {phone_target}")
+            success_line(f"[TERMUX] Otomatis disalin ke memori HP: {phone_target}")
         except Exception:
             pass
 
@@ -3180,7 +3180,7 @@ def handle_download(rest):
 def handle_template(rest):
     arg = (rest or "").strip().lower()
     if not arg or arg == "list":
-        system_line("📦 Template Proyek Siap Pakai (Built-in Boilerplates):", FG_CYAN)
+        system_line(" Template Proyek Siap Pakai (Built-in Boilerplates):", FG_CYAN)
         for key, tpl in BUILTIN_TEMPLATES.items():
             print(f"  {BOLD}{FG_GREEN}{key:<16}{RESET} {tpl['name']} — {DIM}{tpl['description']}{RESET}")
         print()
@@ -3204,7 +3204,7 @@ def handle_template(rest):
 
     success_line(f"Template '{tpl['name']}' berhasil dibuat di workspace/!")
     for f in created:
-        print(f"  {FG_GREEN}✔{RESET} {f}")
+        print(f"  {FG_GREEN}[OK]{RESET} {f}")
     print()
     system_line("Gunakan '!ls' untuk melihat file, atau '/download' untuk membungkusnya dalam file zip.", FG_YELLOW)
 
@@ -3212,7 +3212,7 @@ def handle_template(rest):
 def handle_presets(rest, state):
     arg = (rest or "").strip()
     if not arg or arg == "list":
-        system_line("✨ Prompt Presets — Panduan Instan Generate Kode:", FG_CYAN)
+        system_line("[PRESET] Prompt Presets — Panduan Instan Generate Kode:", FG_CYAN)
         for p in PROMPT_PRESETS:
             print(f"  {BOLD}{FG_YELLOW}[{p['id']:>2}]{RESET} {BOLD}{p['title']}{RESET} {DIM}({p['category']}){RESET}")
             print(f"       {DIM}{p['prompt'][:100]}...{RESET}")
@@ -3227,7 +3227,7 @@ def handle_presets(rest, state):
             error_line(f"Preset #{idx} tidak ditemukan. Ketik '/prompt' untuk daftar.")
             return
         preset = matched[0]
-        system_line(f"🚀 Menjalankan Preset #{preset['id']}: {preset['title']}", FG_CYAN)
+        system_line(f" Menjalankan Preset #{preset['id']}: {preset['title']}", FG_CYAN)
         user_bubble(preset["prompt"])
         run_task(preset["prompt"], state)
         return
@@ -3235,7 +3235,7 @@ def handle_presets(rest, state):
     matched = [p for p in PROMPT_PRESETS if arg.lower() in p["title"].lower() or arg.lower() in p["category"].lower()]
     if matched:
         preset = matched[0]
-        system_line(f"🚀 Menjalankan Preset #{preset['id']}: {preset['title']}", FG_CYAN)
+        system_line(f" Menjalankan Preset #{preset['id']}: {preset['title']}", FG_CYAN)
         user_bubble(preset["prompt"])
         run_task(preset["prompt"], state)
     else:
@@ -3247,7 +3247,7 @@ def handle_diff(rest):
         res = subprocess.run(["git", "diff", "HEAD"], cwd=WORKSPACE_DIR, capture_output=True, text=True, timeout=10)
         diff_text = res.stdout.strip()
         if diff_text:
-            system_line("📄 Git Diff di workspace/:", FG_CYAN)
+            system_line("[FILE] Git Diff di workspace/:", FG_CYAN)
             for line in diff_text.splitlines()[:100]:
                 if line.startswith("+"):
                     print(f"{FG_GREEN}{line}{RESET}")
@@ -3267,7 +3267,7 @@ def handle_diff(rest):
         if fpath:
             with open(fpath, "r", errors="replace") as f:
                 content = f.read()
-            system_line(f"📄 Isi file {arg}:", FG_CYAN)
+            system_line(f"[FILE] Isi file {arg}:", FG_CYAN)
             for i, line in enumerate(content.splitlines()[:60], 1):
                 print(f"  {DIM}{i:>3} |{RESET} {line}")
             return
@@ -3281,7 +3281,7 @@ def handle_snippet(rest):
     sub = parts[0].lower() if parts else "list"
 
     if sub == "list" or not rest.strip():
-        system_line("📚 Koleksi Snippet Kode Anda:", FG_CYAN)
+        system_line("[SNIPPET] Koleksi Snippet Kode Anda:", FG_CYAN)
         files = sorted(os.listdir(SNIPPETS_DIR)) if os.path.isdir(SNIPPETS_DIR) else []
         if not files:
             print("  (belum ada snippet tersimpan)")
@@ -3350,7 +3350,7 @@ def handle_stats(state):
                 except OSError:
                     pass
 
-    system_line("📊 Statistik Sesi & Sistem Agent:", FG_CYAN)
+    system_line("[STATS] Statistik Sesi & Sistem Agent:", FG_CYAN)
     print(f"  Versi Agent        : v{VERSION}")
     print(f"  Model Aktif        : {state.model['label']} ({state.model['id']})")
     print(f"  Reasoning / Effort : {'ON' if state.thinking_on else 'OFF'} ({state.effort.upper()})")
@@ -3358,7 +3358,7 @@ def handle_stats(state):
     print(f"  Langkah per Tugas  : {state.max_steps}")
     print(f"  Superpower Skills  : {len(skills)} skill siap pakai")
     print(f"  File di Workspace  : {len(ws_files)} file ({ws_size / 1024:.1f} KB)")
-    print(f"  Platform           : {'📱 Android Termux' if is_termux() else '💻 Desktop/Server'}")
+    print(f"  Platform           : {'[TERMUX] Android Termux' if is_termux() else '[BASH] Desktop/Server'}")
     phone_dir = get_phone_download_dir()
     if phone_dir:
         print(f"  Storage Eksternal  : {phone_dir}")
@@ -3376,7 +3376,7 @@ def handle_skills(rest):
 
     if not arg:
         w = term_width()
-        print(f"{BG_DARKGREY}{FG_CYAN}{BOLD}{f' 🦸 Superpowers — {len(skills)} skill '.ljust(w)}{RESET}")
+        print(f"{BG_DARKGREY}{FG_CYAN}{BOLD}{f' [SUPERPOWERS] Superpowers — {len(skills)} skill '.ljust(w)}{RESET}")
         for key, sk in skills.items():
             desc = " ".join(sk["description"].split())
             print(f"  {FG_CYAN}{BOLD}{key}{RESET}")
@@ -3419,7 +3419,7 @@ def handle_superpowers(rest, state):
         sp = cfg.get("superpowers", True)
         gt = cfg.get("gates", True)
         system_line(
-            f"🦸 Superpowers : {'ON' if sp else 'OFF'}\n"
+            f"[SUPERPOWERS] Superpowers : {'ON' if sp else 'OFF'}\n"
             f"   Gates       : {'ON' if gt else 'OFF'}  "
             f"(approval · TDD · verifikasi · self-review)\n"
             f"   Skill dimuat: {len(load_skills())} dari {SKILLS_DIR}",
@@ -3587,13 +3587,13 @@ def handle_slash_command(cmd, state):
                     rel = os.path.relpath(fp, WORKSPACE_DIR)
                     zf.write(fp, arcname=rel)
                     file_count += 1
-        success_line(f"💾 Seluruh workspace ({file_count} file) berhasil diekspor ke: {zpath}")
+        success_line(f"[SAVE] Seluruh workspace ({file_count} file) berhasil diekspor ke: {zpath}")
         phone_dl = get_phone_download_dir()
         if phone_dl:
             try:
                 dest = os.path.join(phone_dl, zname)
                 shutil.copy2(zpath, dest)
-                success_line(f"📱 Otomatis disalin ke memori HP: {dest}")
+                success_line(f"[TERMUX] Otomatis disalin ke memori HP: {dest}")
             except Exception:
                 pass
         return False
@@ -3836,7 +3836,7 @@ def handle_slash_command(cmd, state):
             if not query:
                 error_line("Pakai: /search test <query>")
                 return False
-            system_line(f"🔎 Mencari \"{query}\" (5 hasil)...", FG_YELLOW)
+            system_line(f"[SEARCH] Mencari \"{query}\" (5 hasil)...", FG_YELLOW)
             try:
                 results, used, note = web_search(state.config, query, 5)
             except Exception as e:
@@ -3860,7 +3860,7 @@ def handle_slash_command(cmd, state):
         if not rest:
             error_line("Pakai: /fetch <url>")
             return False
-        system_line(f"📄 Fetching {rest} ...", FG_YELLOW)
+        system_line(f"[FILE] Fetching {rest} ...", FG_YELLOW)
         try:
             title, text = web_fetch(state.config, rest)
         except Exception as e:
@@ -3948,7 +3948,7 @@ def _print_workflow_receipt():
     if not any(s.values()):
         return
     w = term_width()
-    print(f"{BG_DARKGREY}{FG_CYAN}{BOLD}{' 🦸 Superpowers — catatan kerja '.ljust(w)}{RESET}")
+    print(f"{BG_DARKGREY}{FG_CYAN}{BOLD}{' [SUPERPOWERS] Superpowers — catatan kerja '.ljust(w)}{RESET}")
     if s["skills"]:
         print(f"   {FG_CYAN}Skill dipakai :{RESET} {', '.join(s['skills'])}")
     if s["approvals"]:
@@ -3961,16 +3961,16 @@ def _print_workflow_receipt():
     if wf.verifications:
         print(f"   {FG_GREEN}Bukti verifikasi ({len(wf.verifications)}):{RESET}")
         for v in wf.verifications[-4:]:
-            print(f"     {FG_GREEN}✔{RESET} {DIM}{v['cmd']}{RESET}")
+            print(f"     {FG_GREEN}[OK]{RESET} {DIM}{v['cmd']}{RESET}")
     elif s["files"]:
-        print(f"   {FG_YELLOW}⚠ Belum ada bukti verifikasi yang kejalan.{RESET}")
+        print(f"   {FG_YELLOW}[WARN] Belum ada bukti verifikasi yang kejalan.{RESET}")
     print()
 
 
 def _print_download_hint():
     if not LAST_TASK_FILES:
         return
-    print(f"{BG_DARKGREY}{FG_GREEN}{BOLD} 📦 File hasil kerja (workspace/):{RESET}")
+    print(f"{BG_DARKGREY}{FG_GREEN}{BOLD}  File hasil kerja (workspace/):{RESET}")
     for i, f in enumerate(LAST_TASK_FILES, 1):
         print(f"   {FG_GREEN}{BOLD}{i}.{RESET} {f}")
     if len(LAST_TASK_FILES) == 1:
@@ -3978,7 +3978,7 @@ def _print_download_hint():
     else:
         cmd = "/download"
     print(
-        f"{FG_GREEN}{BOLD}💾 Click here to download: {cmd}{RESET}  "
+        f"{FG_GREEN}{BOLD}[SAVE] Click here to download: {cmd}{RESET}  "
         f"{DIM}(zip otomatis ke folder downloads/){RESET}"
     )
     print()
@@ -4002,7 +4002,7 @@ def run_task(task, state):
                 streamed["words"] += len(text.split())
                 if state.show_thinking:
                     if not streamed["shown"]:
-                        thinking_header("🧠 Thinking")
+                        thinking_header("[THINKING] Thinking")
                         streamed["shown"] = True
                     thinking_chunk(text)
 
@@ -4034,18 +4034,18 @@ def run_task(task, state):
             if model_thinking:
                 if state.show_thinking:
                     if not streamed["shown"]:
-                        thinking_block(model_thinking, "🧠 Thinking")
+                        thinking_block(model_thinking, "[THINKING] Thinking")
                 else:
                     hidden_words += len(model_thinking.split())
             if thinks:
                 if state.show_thinking:
                     for t in thinks:
-                        thinking_block(t, "🧠 Plan")
+                        thinking_block(t, "[THINKING] Plan")
                 else:
                     hidden_words += sum(len(t.split()) for t in thinks)
             if hidden_words and not state.show_thinking:
                 system_line(
-                    f"🧠 Thinking… ({hidden_words} kata, disembunyikan — /think show buat lihat)",
+                    f"[THINKING] Thinking… ({hidden_words} kata, disembunyikan — /think show buat lihat)",
                     FG_MAGENTA,
                 )
 
@@ -4055,7 +4055,7 @@ def run_task(task, state):
                     gate_line(gate)
                     state.messages.append({
                         "role": "user",
-                        "content": f"OBSERVATION: 🛑 {gate}",
+                        "content": f"OBSERVATION: [GATE] {gate}",
                     })
                     continue
                 done_line(parsed["summary"])
@@ -4079,7 +4079,7 @@ def run_task(task, state):
                     gate_line(gate)
                     state.messages.append({
                         "role": "user",
-                        "content": f"OBSERVATION: 🛑 {gate}",
+                        "content": f"OBSERVATION: [GATE] {gate}",
                     })
                     continue
 
@@ -4106,7 +4106,7 @@ def run_task(task, state):
         error_line(f"Melebihi batas langkah maksimum ({state.max_steps}) untuk tugas ini.")
 
     except KeyboardInterrupt:
-        system_line("⏹ Tugas dibatalkan.", FG_YELLOW)
+        system_line("[ABORT] Tugas dibatalkan.", FG_YELLOW)
         if state.messages and state.messages[-1]["role"] == "user":
             state.messages.pop()
 
@@ -4169,7 +4169,7 @@ def doctor(verbose=True):
 
     w = term_width()
     print(f"{FG_CYAN}{BOLD}{'═' * w}{RESET}")
-    print(f"{FG_CYAN}{BOLD}🩺 Agent Doctor — Cek Instalasi & Diagnostik Sistem{RESET}")
+    print(f"{FG_CYAN}{BOLD}[DOCTOR] Agent Doctor — Cek Instalasi & Diagnostik Sistem{RESET}")
     print(f"{FG_CYAN}{BOLD}{'═' * w}{RESET}")
     print(f"  Versi Agent   : v{VERSION} (Superpowers Code Generator Edition)")
     print(f"  Python        : {sys.version.split()[0]}  ({sys.executable})")
@@ -4178,7 +4178,7 @@ def doctor(verbose=True):
     print(f"  Folder skills : {SKILLS_DIR}")
     print(f"  Skill kemuat  : {n_skills} Superpower skills")
     print(f"  Lebar layar   : {w} kolom{'  (mode HP/sempit)' if is_narrow() else ''}")
-    print(f"  Platform      : {'📱 Android Termux' if is_termux() else '💻 Desktop/Linux/macOS'}")
+    print(f"  Platform      : {'[TERMUX] Android Termux' if is_termux() else '[BASH] Desktop/Linux/macOS'}")
     phone_dl = get_phone_download_dir()
     if phone_dl:
         print(f"  Storage HP    : {phone_dl} (tersambung)")
@@ -4274,7 +4274,7 @@ def main():
             cmd = text[1:].strip()
             if not cmd:
                 continue
-            system_line(f"💻 bash › {cmd}", FG_YELLOW)
+            system_line(f"[BASH] bash › {cmd}", FG_YELLOW)
             result = tool_bash({"command": cmd, "timeout": 120}, state.config)
             observation_line(result)
             toolbar(state)

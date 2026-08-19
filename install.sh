@@ -22,16 +22,16 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
 echo "========================================================="
-echo "   🦸 AGENT CLI — SUPERPOWERS INSTALLER v3.2.0"
+echo "   [SUPERPOWERS] AGENT CLI — SUPERPOWERS INSTALLER v3.2.0"
 echo "========================================================="
-echo "📂 Direktori : $DIR"
+echo "[DIR] Direktori : $DIR"
 
 IS_TERMUX=false
 if [ -d "/data/data/com.termux" ] || [ -n "${TERMUX_VERSION:-}" ]; then
     IS_TERMUX=true
-    echo "📱 Terdeteksi: Lingkungan ANDROID TERMUX"
+    echo "[TERMUX] Terdeteksi: Lingkungan ANDROID TERMUX"
 else
-    echo "💻 Terdeteksi: Lingkungan Linux / macOS / Unix"
+    echo "[BASH] Terdeteksi: Lingkungan Linux / macOS / Unix"
 fi
 echo
 
@@ -39,7 +39,7 @@ echo
 # 1. Pemasangan Package Dasar (khusus Termux)
 # ----------------------------------------------------------------------------
 if [ "$IS_TERMUX" = true ]; then
-    echo "📦 [1/5] Memeriksa paket Termux (python, git, termux-api)..."
+    echo " [1/5] Memeriksa paket Termux (python, git, termux-api)..."
     if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
         echo "   Menginstall python..."
         pkg install python -y || apt-get install python -y
@@ -55,7 +55,7 @@ if [ "$IS_TERMUX" = true ]; then
     
     # Cek permission storage Termux
     if [ ! -d "$HOME/storage" ] && [ ! -d "/sdcard" ]; then
-        echo "📱 Ingin mengaktifkan akses memori HP (agar file zip bisa langsung ke Download)?"
+        echo "[TERMUX] Ingin mengaktifkan akses memori HP (agar file zip bisa langsung ke Download)?"
         echo "   Menjalankan termux-setup-storage..."
         termux-setup-storage 2>/dev/null || true
     fi
@@ -64,7 +64,7 @@ fi
 # ----------------------------------------------------------------------------
 # 2. Deteksi Python Interpreter
 # ----------------------------------------------------------------------------
-echo "🐍 [2/5] Mencari Python..."
+echo "[PYTHON] [2/5] Mencari Python..."
 PY=""
 for c in python3 python python3.12 python3.11 python3.10 python3.9; do
     if command -v "$c" >/dev/null 2>&1; then
@@ -74,7 +74,7 @@ for c in python3 python python3.12 python3.11 python3.10 python3.9; do
 done
 
 if [ -z "$PY" ]; then
-    echo "✖ Error: Python tidak ditemukan!"
+    echo "[X] Error: Python tidak ditemukan!"
     if [ "$IS_TERMUX" = true ]; then
         echo "  Jalankan: pkg install python -y"
     else
@@ -82,23 +82,23 @@ if [ -z "$PY" ]; then
     fi
     exit 1
 fi
-echo "✔ Python aktif: $($PY --version 2>&1) ($PY)"
+echo "[OK] Python aktif: $($PY --version 2>&1) ($PY)"
 
 # ----------------------------------------------------------------------------
 # 3. Install Python Dependencies
 # ----------------------------------------------------------------------------
-echo "📦 [3/5] Memeriksa dependensi Python..."
+echo " [3/5] Memeriksa dependensi Python..."
 if [ -f requirements.txt ]; then
     $PY -m pip install -q --break-system-packages -r requirements.txt 2>/dev/null \
         || $PY -m pip install -q -r requirements.txt 2>/dev/null \
         || pip install -q -r requirements.txt 2>/dev/null \
-        || echo "⚠ Catatan: Pip install dilewati, Agent memiliki built-in fallback zero-dependency."
+        || echo "[WARN] Catatan: Pip install dilewati, Agent memiliki built-in fallback zero-dependency."
 fi
 
 # ----------------------------------------------------------------------------
 # 4. Beri Permission Eksekusi & Buat Shortcut Global 'agent'
 # ----------------------------------------------------------------------------
-echo "⚙ [4/5] Membuat shortcut global 'agent'..."
+echo "[CONFIG] [4/5] Membuat shortcut global 'agent'..."
 chmod +x "$DIR/run.sh" 2>/dev/null || true
 chmod +x "$DIR/main.py" 2>/dev/null || true
 chmod +x "$DIR/install.sh" 2>/dev/null || true
@@ -120,7 +120,7 @@ if [ -n "$BIN_DIR" ]; then
 exec bash "$DIR/run.sh" "\$@"
 EOF
     chmod +x "$BIN_DIR/agent"
-    echo "✔ Perintah 'agent' dipasang di $BIN_DIR/agent"
+    echo "[OK] Perintah 'agent' dipasang di $BIN_DIR/agent"
 fi
 
 # Tambahkan alias ke .bashrc dan .zshrc
@@ -132,7 +132,7 @@ for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
             echo "" >> "$TARGET"
             echo "# Agent CLI shortcut" >> "$TARGET"
             echo "alias agent='bash \"$DIR/run.sh\"'" >> "$TARGET"
-            echo "✔ Alias 'agent' ditambahkan ke $TARGET"
+            echo "[OK] Alias 'agent' ditambahkan ke $TARGET"
         fi
     fi
 done
@@ -140,12 +140,12 @@ done
 # ----------------------------------------------------------------------------
 # 5. Verifikasi Instalasi dengan Agent Doctor
 # ----------------------------------------------------------------------------
-echo "🩺 [5/5] Memeriksa kesehatan instalasi..."
+echo "[DOCTOR] [5/5] Memeriksa kesehatan instalasi..."
 echo
 $PY main.py --doctor || true
 
 echo "========================================================="
-echo "🎉 INSTALASI SELESAI!"
+echo "[SUCCESS] INSTALASI SELESAI!"
 echo "========================================================="
 echo "Cara menjalankan Agent:"
 echo "  1. Dari folder ini   : bash run.sh  (atau: python3 main.py)"
